@@ -15,6 +15,10 @@ from typing import List, Callable, Tuple
 # Lines 212 - 519 zijn de simulatie, als je die wil gebruiken moeten er een paar "#" worden weggehaald
 # Lines 533 - 1036 is de GUI, eerst classes, daarna de game loop, in de game loop zie je welke events kunnen gebeuren en hoe
 
+
+# IDEA: use fixed reward for each ending of dice as you are not dependent on what kind of player you are up against
+
+
 # GENERAL TO DO:  
 # 1. Add doc comments to each class and method
 # 2. Refactor longer methods
@@ -23,6 +27,16 @@ from typing import List, Callable, Tuple
 # TO DO: reorganize this class
 class Player:
     def __init__(self, id: int, strategy: str, alpha: float, beta: float, is_simulation = False):
+        self._agent = None
+        if (strategy == "QLearner"):
+            self._agent = Agent(
+                gamma=0.95,
+                epsilon_init=1.0, 
+                epsilon_decay=0.00002, 
+                epsilon_final=0.1, 
+                alpha=0.01,
+                id=id
+            )
         self._id = id # 1-indexed
         self._strategy = strategy
         self._stripes = 0
@@ -128,6 +142,7 @@ class Player:
     def utilities(self) -> list:
         return self._utilities
     
+    
     @property
     def alpha(self) -> float:
         return self._alpha
@@ -143,6 +158,10 @@ class Player:
     @property
     def pending_stripes(self) -> int:
         return self._pending_stripes
+    
+    @property
+    def agent(self) -> 'Agent':
+        return self._agent
 
     def add_utility(self, utility: float) -> None:
         self._utilities.append(utility)
@@ -232,12 +251,12 @@ class Agent:
         self.epsilon_final = epsilon_final
         
         self.learning_rate = alpha
-        self.discount_rate = gamma
+        self.discount_factor = gamma
         self.id = id
 
         self.training_errors = []
 
-    def get_action(self, freq: list[int], cur_sum):
+    def get_action(self, freq: list[int], cur_sum: int):
         valid_indices = [i for i, x in enumerate(freq) if x != 0] 
         if (np.random.random() < self.epsilon):
             return rand.choice(valid_indices)
@@ -276,11 +295,6 @@ class Agent:
         
 
 
-learning_rate = 0.01
-n_episodes = 1_000_000
-start_epsilon = 1
-epsilon_decay = start_epsilon / (n_episodes / 2)
-final_epsilon = 0.1
 
 
 REPLICATIONS = 100000
@@ -291,6 +305,11 @@ PLAYERCOUNT = int(input("How many players do you want in this game? "))
 # IS_SIMULATION = input("Do you want to run a simulation? (True/False) ")
 # IS_SIMULATION = True if IS_SIMULATION == "True" else False
 IS_SIMULATION = True
+
+# Initialize tracking dictionaries for each player
+dice_choice_freq_per_player = [{i: 0 for i in range(1, SIDES + 1)} for _ in range(PLAYERCOUNT)]
+ending_sum_freq_per_player = [{i: 0 for i in range(DICE * SIDES + 1)} for _ in range(PLAYERCOUNT)]
+
 
 # these lists are constructed by a simulation in java with 1e8 replications for each entry
 underTenProbabilityMemo = [
@@ -525,7 +544,24 @@ def calculate_rewards(dice_sum: int, player_list: list[Player], cur_player: Play
         stripes_taken = 30 - dice_sum
     return stripes_taken, stripes_given, doubled
 
+def choices_QLearner(RL_agent: Agent):
+    obs = draw_dice(DICE)
+    cur_sum = 0
+    reward = 0
+    while any(val > 0 for val in obs):
+        action = RL_agent.get_action(obs, cur_sum) # action is a number that they picked
+        dice_count, cur_sum = handle_dice(sum(obs), cur_sum, action-1, obs[action-1], RL_agent.id, dice_choice_freq_per_player)
+        next_obs = draw_dice(dice_count)
+        terminated = all(x == 0 for x in next_obs)
+        if terminated:
+            stripes_taken, stripes_given, _ = calculate_rewards(cur_sum, player_list, player_list[RL_agent.id])
+            reward = stripes_given - stripes_taken
 
+        RL_agent.update(cur_sum, obs, reward, terminated, next_obs)
+        obs = next_obs
+       
+
+    RL_agent.decay()
 
 def plot_frequencies(frequencies: list[int], title:str, xlabel:str, ylabel:str) -> None:
     plt.figure(figsize=(10, 6))
@@ -541,6 +577,9 @@ def play_round(player_list: list[Player], dice_choice_freq_per_player: list[dict
     for id in range(1, PLAYERCOUNT + 1):
         cur_player = player_list[id - 1]
         strategy = cur_player.strategy
+        if (strategy == "QLearner"):
+            choices_QLearner(cur_player.agent)
+            return
         if cur_player.stripes >= 15:
             cur_player.drink()
         dice_count = DICE
@@ -604,9 +643,6 @@ def show_statistics(player_list: list[Player], dice_choice_freq_per_player: list
         )
     print("--------------------------------------------------------------------------------")    
 
-# Initialize tracking dictionaries for each player
-dice_choice_freq_per_player = [{i: 0 for i in range(1, SIDES + 1)} for _ in range(PLAYERCOUNT)]
-ending_sum_freq_per_player = [{i: 0 for i in range(DICE * SIDES + 1)} for _ in range(PLAYERCOUNT)]
 
 
 
@@ -614,7 +650,7 @@ ending_sum_freq_per_player = [{i: 0 for i in range(DICE * SIDES + 1)} for _ in r
 # actual game/simulation: 
 player_list = []
 for i in range(1, PLAYERCOUNT + 1):
-    strategy = input(f"What is the strategy for player {i}? (RiskTaker, RiskAverse, SmartRiskTaker or playSelf) ")
+    strategy = input(f"What is the strategy for player {i}? (RiskTaker, RiskAverse, SmartRiskTaker, QLearner or playSelf) ")
     if strategy == "playSelf":
         strategy = input("What is your name? ")
     alpha, beta = 1.1, 0.04
@@ -629,32 +665,17 @@ for player in player_list:
             else:
                 player.add_utility(1)
 
-RL_agent = Agent( 
-        gamma=0.95,
-        epsilon_init=start_epsilon, 
-        epsilon_decay=epsilon_decay, 
-        epsilon_final=final_epsilon, 
-        alpha=learning_rate,
-        id=PLAYERCOUNT+1
-    )
 
-for episode in tqdm(range(n_episodes)):
-    obs = draw_dice(DICE)
-    cur_sum = 0
-    reward = 0
-    while any(obs > 0):
-        action = RL_agent.get_action(obs, cur_sum) # action is a number that they picked
-        dice_count, cur_sum = handle_dice(sum(obs), cur_sum, action-1, obs[action-1], RL_agent.id, dice_choice_freq_per_player)
-        next_obs = draw_dice(dice_count)
-        terminated = all(x == 0 for x in next_obs)
-        if terminated:
-            stripes_taken, stripes_given, _ = calculate_rewards(cur_sum, player_list, player_list[RL_agent.id])
-            reward = stripes_given - stripes_taken
+if IS_SIMULATION:
+    simulation(player_list, dice_choice_freq_per_player)
 
-        RL_agent.update(cur_sum, obs, action, reward, terminated, next_obs)
-        obs = next_obs
+SHOW_STATS = str(input("Do you want to view the statistics? (y/n) "))
+if SHOW_STATS == 'y':   
+    show_statistics(player_list, dice_choice_freq_per_player, ending_sum_freq_per_player, REPLICATIONS)
 
-    RL_agent.decay()
+
+exit()
+    
 
 
 def get_moving_avgs(arr, window, convolution_mode):
@@ -694,17 +715,6 @@ axs[2].plot(range(len(training_error_moving_average)), training_error_moving_ave
 plt.tight_layout()
 plt.show()
  
-exit()
-
-if IS_SIMULATION:
-    simulation(player_list, dice_choice_freq_per_player)
-
-SHOW_STATS = str(input("Do you want to view the statistics? (y/n) "))
-if SHOW_STATS == 'y':   
-    show_statistics(player_list, dice_choice_freq_per_player, ending_sum_freq_per_player, REPLICATIONS)
-
-
-exit()
 
 
 
