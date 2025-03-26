@@ -1,5 +1,4 @@
 import random as rand
-import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import math
@@ -14,7 +13,12 @@ from typing import List, Callable, Tuple
 # Lines 212 - 519 zijn de simulatie, als je die wil gebruiken moeten er een paar "#" worden weggehaald
 # Lines 533 - 1036 is de GUI, eerst classes, daarna de game loop, in de game loop zie je welke events kunnen gebeuren en hoe
 
+# GENERAL TO DO:  
+# 1. Add doc comments to each class and method
+# 2. Refactor longer methods
+# 3. Split game part and Simulation/RL agent part
 
+# TO DO: reorganize this class
 class Player:
     def __init__(self, id: int, strategy: str, alpha: float, beta: float, is_simulation = False):
         self._id = id # 1-indexed
@@ -23,10 +27,10 @@ class Player:
         self._times_drunk = 0
         self._stripes_given = 0
         self._doubling_count = 0
-        self._timesOneFirst = 0
-        self._bestDoubling = 0
-        self._bestExtraAbove30 = 0
-        self._maxDrunk = 0
+        self._times_one_first = 0
+        self._best_doubling = 0
+        self._best_extra_above_30 = 0
+        self._max_drunk = 0
         self._threshold = 15
         self._utilities = []
         self._alpha = alpha
@@ -40,10 +44,10 @@ class Player:
         self._times_drunk = 0
         self._stripes_given = 0
         self._doubling_count = 0
-        self._timesOneFirst = 0
-        self._bestDoubling = 0
-        self._bestExtraAbove30 = 0
-        self._maxDrunk = 0
+        self._times_one_first = 0
+        self._best_doubling = 0
+        self._best_extra_above_30 = 0
+        self._max_drunk = 0
         
     
     @property
@@ -91,32 +95,32 @@ class Player:
         self._doubling_count = value
 
     @property
-    def timesOneFirst(self) -> int:
-        return self._timesOneFirst
+    def times_one_first(self) -> int:
+        return self._times_one_first
     
-    @timesOneFirst.setter
-    def timesOneFirst(self, value: int) -> None:
-        self._timesOneFirst = value
+    @times_one_first.setter
+    def times_one_first(self, value: int) -> None:
+        self._times_one_first = value
 
     @property 
-    def bestDoubling(self) -> int:
-        return self._bestDoubling
+    def best_doubling(self) -> int:
+        return self._best_doubling
     
-    @bestDoubling.setter
-    def bestDoubling(self, value: int) -> None:
-        self._bestDoubling = value
+    @best_doubling.setter
+    def best_doubling(self, value: int) -> None:
+        self._best_doubling = value
 
     @property
-    def bestExtraAbove30(self) -> int:
-        return self._bestExtraAbove30
+    def best_extra_above_30(self) -> int:
+        return self._best_extra_above_30
     
-    @bestExtraAbove30.setter
-    def bestExtraAbove30(self, value: int) -> None:
-        self._bestExtraAbove30 = value
+    @best_extra_above_30.setter
+    def best_extra_above_30(self, value: int) -> None:
+        self._best_extra_above_30 = value
 
     @property
-    def maxDrunk(self) -> int:
-        return self._maxDrunk
+    def max_drunk(self) -> int:
+        return self._max_drunk
     
     @property
     def utilities(self) -> list:
@@ -138,27 +142,27 @@ class Player:
     def pending_stripes(self) -> int:
         return self._pending_stripes
 
-    def addUtility(self, utility: float) -> None:
+    def add_utility(self, utility: float) -> None:
         self._utilities.append(utility)
     
-    def setUtility(self, utility: float, index: int) -> None:
-        if index >= len(self.utilities):
+    def set_utility(self, utility: float, index: int) -> None:
+        if index >= len(self._utilities):
             print("This player does not exist, try to change another player's utility!")
         else:
             self._utilities[index] = utility
     
-    def getOwnUtility(self) -> float:
+    def get_own_utility(self) -> float:
         return self._utilities[self._id-1]
     
-    def setOwnUtility(self, utility: float) -> None:
+    def set_own_utility(self, utility: float) -> None:
         self._utilities[self._id-1] = utility
 
     def add_stripes_given(self, extra_stripes: int) -> None:
-        self.stripes_given += extra_stripes
+        self._stripes_given += extra_stripes
 
     def add_stripes(self, extra_stripes: int) -> None:
         if self._is_simulation:
-            self.stripes += extra_stripes
+            self._stripes += extra_stripes
         else:
             self._pending_stripes += extra_stripes  
 
@@ -166,50 +170,50 @@ class Player:
         if self._pending_stripes > 0:
             for base in [1000, 100, 10, 1]:
                 if self._pending_stripes >= base:
-                    self.stripes += base  
+                    self._stripes += base  
                     self._pending_stripes -= base  
                     break  
         elif self._pending_stripes < 0:
             for base in [1000, 100, 10, 1]:
                 if self._pending_stripes <= -base:
-                    self.stripes -= base  
+                    self._stripes -= base  
                     self._pending_stripes += base  
                     break  
 
     def double_stripes(self) -> None:
-        self.add_stripes(self.stripes)
+        self.add_stripes(self._stripes)
 
     def drink(self) -> int:
-        timesToDrink = self.stripes // self._threshold
-        self._maxDrunk = max(self._maxDrunk, timesToDrink)
-        self.times_drunk += timesToDrink
-        self.add_stripes(-timesToDrink * 15)
-        return timesToDrink
+        times_to_drink = self._stripes // self._threshold
+        self._max_drunk = max(self._max_drunk, times_to_drink)
+        self._times_drunk += times_to_drink
+        self.add_stripes(-times_to_drink * 15)
+        return times_to_drink
 
-    def getGivenTakenRatio(self) -> float:
-        return self.stripes_given / self.times_drunk if self.times_drunk != 0 else 0
+    def get_given_taken_ratio(self) -> float:
+        return self._stripes_given / self._times_drunk if self._times_drunk != 0 else 0
     
-    def getDoublingSuccessRate(self) -> float:
-        return self._doubling_count / (self._timesOneFirst) if (self._timesOneFirst) != 0 else 0
+    def get_doubling_success_rate(self) -> float:
+        return self._doubling_count / (self._times_one_first) if (self._times_one_first) != 0 else 0
     
     # New methods for updating statistics
     def increment_doubling_count(self) -> None:
         self._doubling_count += 1
     
-    def increment_timesOneFirst(self) -> None:
-        self._timesOneFirst += 1
+    def increment_times_one_first(self) -> None:
+        self._times_one_first += 1
     
     def update_best_doubling(self, value: int) -> None:
-        self._bestDoubling = max(self._bestDoubling, value)
+        self._best_doubling = max(self._best_doubling, value)
     
     def update_best_extra_above_30(self, value: int) -> None:
-        self._bestExtraAbove30 = max(self._bestExtraAbove30, value)
+        self._best_extra_above_30 = max(self._best_extra_above_30, value)
 
     def get_columns(self):
         return ["Name", "Stripes", "Times drunk", "Double count", "Stripes given"]
 
     def get_row(self):
-        return [self.strategy, self.stripes, self.times_drunk, self.doubling_count, self.stripes_given]
+        return [self._strategy, self._stripes, self._times_drunk, self._doubling_count, self._stripes_given]
 
 
 REPLICATIONS = 100000
@@ -230,8 +234,6 @@ underTenProbabilityMemo = [
     [0.0, 0.0, 0.0, 0.0, 0.5929544, 0.4258245, 0.2963749, 0.1573801, 0.074112, 0.0],
     [0.0, 0.0, 0.0, 0.0, 0.0, 0.8334398, 0.6667124, 0.500127, 0.3333399, 0.1667368]
     ]
-
-
 expectedEndSumMemo = [
     [29.26835475, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
     [0.0, 24.72776855, 25.72860164, 26.72927068, 27.73020606, 28.72966293, 29.65602928, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
@@ -248,8 +250,6 @@ expectedStripesMemo = [
     [0.0, 0.0, 0.0, 0.0, 7.1658865, 9.92525216, 11.81385213, 13.74922749, 13.47234195, 13.02803964, 12.0275384, 11.02763392, 10.02752508, 9.02776954, 8.02811801, 7.02754449, 6.02782585, 5.02764732, 4.0275967, 3.10142035, 2.25907402, 1.55518348, 0.98151193, 0.57404464, 0.34269577, 0.0, 0.0, 0.0, 0.0, 0.0],
     [0.0, 0.0, 0.0, 0.0, 0.0, 3.16590901, 6.16706347, 8.99797207, 11.66655587, 14.16581425, 16.49998159, 15.4997544, 14.49968483, 13.50001704, 12.49978578, 11.49979552, 10.50002263, 9.50020448, 8.49990452, 7.50003166, 6.49988023, 5.50003433, 4.50028031, 3.49995469, 2.49996531, 1.66678298, 0.99990981, 0.49997542, 0.16665148, 0.0]
 ]
-
-
 expectedGivenStripesMemo = [
     [2.664744038979394, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
     [0.0, 0.05895985120614905, 0.2134380540875069, 0.5443338024770046, 1.1094505557739025, 1.983404392854119, 3.0189908993773127, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
@@ -258,10 +258,9 @@ expectedGivenStripesMemo = [
     [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.20715720582750594, 0.647479038488219, 1.4763257129695433, 2.6687250324436556, 4.327304286349778, 5.544683639056445, 0.0, 0.0, 0.0, 0.0, 0.0],
     [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.466316353103476, 1.3993724775367364, 2.7986301664261246, 4.664306265081332, 6.995551219979035]
 ]
-
-
 expectedGivenStripesMemoAbove30 = [2.798420295491079, 5.596840590982158, 8.395260886473237, 11.193681181964315, 13.992101477455394, 16.790521772946473]
 
+# TO DO: either remove these utilities or organize them better
 def linear_utility(x: float) -> float:
     return x
 
@@ -286,110 +285,112 @@ def draw_dice(diceCount: int) -> list:
         frequency[rand.randint(0, SIDES-1)] += 1
     return frequency
 
-def handle_dice(diceCount: int, curSum: int, index: int, freq: int, id: int, dice_choice_freq_per_player: list[dict[int, int]]) -> list:
-    diceCount -= freq
+def handle_dice(dice_count: int, cur_sum: int, index: int, freq: int, id: int, dice_choice_freq_per_player: list[dict[int, int]]) -> tuple[int, int]:
+    dice_count -= freq
     dice_choice_freq_per_player[id-1][index+1] += freq
-    curSum += freq * (index+1)
-    return diceCount, curSum
+    cur_sum += freq * (index+1)
+    return dice_count, cur_sum
 
-def risk_strategy(frequency: list, diceCount: int, curSum: int, id: int, dice_choice_freq_per_player: list[dict[int, int]], playerList: list[Player]) -> list:
+def risk_strategy(frequency: list, dice_count: int, cur_sum: int, id: int, dice_choice_freq_per_player: list[dict[int, int]], player_list: list[Player]) -> tuple[int, int]:
     for index, freq in enumerate(frequency):
         if freq > 0:
-            if diceCount == 6:
-                playerList[id-1].increment_timesOneFirst()
-            [diceCount, curSum] = handle_dice(diceCount, curSum, index, freq, id, dice_choice_freq_per_player)
+            if dice_count == 6:
+                player_list[id-1].increment_times_one_first()
+            dice_count, cur_sum = handle_dice(dice_count, cur_sum, index, freq, id, dice_choice_freq_per_player)
             break 
-    return [diceCount, curSum]
+    return dice_count, cur_sum
 
-def risk_averse_strategy(frequency: list, diceCount: int, curSum: int, id: int, dice_choice_freq_per_player: list[dict[int, int]]) -> list:
+def risk_averse_strategy(frequency: list, dice_count: int, cur_sum: int, id: int, dice_choice_freq_per_player: list[dict[int, int]]) -> tuple[int, int]:
     for index in range(len(frequency) - 1, -1, -1):
         freq = frequency[index]
         if freq > 0:
-            [diceCount, curSum] = handle_dice(diceCount, curSum, index, freq, id, dice_choice_freq_per_player)
+            [dice_count, cur_sum] = handle_dice(dice_count, cur_sum, index, freq, id, dice_choice_freq_per_player)
             break
-    return [diceCount, curSum]
+    return dice_count, cur_sum
 
-def personal_strategy(frequency: list, diceCount: int, curSum: int, id: int, dice_choice_freq_per_player: list[dict[int,int]], playerList: list[Player]) -> list:
-    print(f"Your have currently thrown {DICE - diceCount} dice and you have a sum of {curSum}")
+def personal_strategy(frequency: list, dice_count: int, cur_sum: int, id: int, dice_choice_freq_per_player: list[dict[int,int]], player_list: list[Player]) -> tuple[int, int]:
+    print(f"Your have currently thrown {DICE - dice_count} dice and you have a sum of {cur_sum}")
     index = int(input(f"Here are the frequencies of the dice: {frequency}, what dice do you choose to hold? "))-1
     for i in range(SIDES):
         if (frequency[i] > 0):
             if i == index:
-                playerList[id-1].increment_timesOneFirst
+                player_list[id-1].increment_times_one_first
             break
-    [diceCount, curSum] = handle_dice(diceCount, curSum, index, frequency[index], id, dice_choice_freq_per_player)
-    return [diceCount, curSum]
+    [dice_count, cur_sum] = handle_dice(dice_count, cur_sum, index, frequency[index], id, dice_choice_freq_per_player)
+    return dice_count, cur_sum
 
-def prepare_smart_risktaker(frequency, diceCount, curSum) -> tuple:
-    expectedStripesForSelf = [0] * 6
-    expectedGivenStripesAbove30 = [0] * 6
+# TO DO: Refactor this method
+def prepare_smart_risktaker(frequency, dice_count, cur_sum) -> tuple[list[int], list[int], list[float]]:
+    expected_stripes_for_self = [0] * 6
+    expected_given_stripes_above_30 = [0] * 6
     p_doubling = [0] * 6
 
     for index, freq in enumerate(frequency):
         if freq > 0:
-            tempDiceCount = diceCount - freq
-            tempCurSum = curSum + freq * (index+1)
+            temp_dice_count = dice_count - freq
+            temp_cur_sum = cur_sum + freq * (index+1)
             # cases: 1. thrown all 6 dice -> you know the outcomes now, so compare real with expected as usual  2. sum 30 still one dice -> just throw it, and this is obviously the best option 3. Normal (still have dice to throw under 30) -> use memo tables
             # case1:
-            if tempDiceCount == 0:
-                expectedStripesForSelf[index] = 30 - tempCurSum if (10 < tempCurSum < 30) else 0
-                expectedGivenStripesAbove30[index] = expectedGivenStripesMemoAbove30[tempCurSum - 31] if tempCurSum > 30 else 0
-                p_doubling[index] = 0 if tempCurSum > 10 else 1  
+            if temp_dice_count == 0:
+                expected_stripes_for_self[index] = 30 - temp_cur_sum if (10 < temp_cur_sum < 30) else 0
+                expected_given_stripes_above_30[index] = expectedGivenStripesMemoAbove30[temp_cur_sum - 31] if temp_cur_sum > 30 else 0
+                p_doubling[index] = 0.0 if temp_cur_sum > 10 else 1.0  
             #case2:    
-            elif tempDiceCount == 1 and tempCurSum == 30:
-                expectedStripesForSelf[index] = 0
-                expectedGivenStripesAbove30[index] = (expectedGivenStripesMemoAbove30[2] + expectedGivenStripesMemoAbove30[3]) / 2
-                p_doubling[index] = 0
+            elif temp_dice_count == 1 and temp_cur_sum == 30:
+                expected_stripes_for_self[index] = 0
+                expected_given_stripes_above_30[index] = (expectedGivenStripesMemoAbove30[2] + expectedGivenStripesMemoAbove30[3]) / 2
+                p_doubling[index] = 0.0
             #case3:
             else:
-                expectedStripesForSelf[index] = expectedStripesMemo[DICE - tempDiceCount][tempCurSum]
-                expectedGivenStripesAbove30[index] = expectedGivenStripesMemo[DICE-tempDiceCount][tempCurSum]
-                p_doubling[index] = underTenProbabilityMemo[DICE - tempDiceCount][tempCurSum] if tempCurSum < 10 else 0
+                expected_stripes_for_self[index] = expectedStripesMemo[DICE - temp_dice_count][temp_cur_sum]
+                expected_given_stripes_above_30[index] = expectedGivenStripesMemo[DICE-temp_dice_count][temp_cur_sum]
+                p_doubling[index] = underTenProbabilityMemo[DICE - temp_dice_count][temp_cur_sum] if temp_cur_sum < 10 else 0.0
                 # expectedStripesForSelf[index] *= (1-p_doubling[index])
 
-    return expectedStripesForSelf, expectedGivenStripesAbove30, p_doubling
+    return expected_stripes_for_self, expected_given_stripes_above_30, p_doubling
 
-
-def best_choice_smart_risktaker(frequency: list, expectedStripesForSelf: list, expectedGivenStripesAbove30: list, p_doubling: list, playerList: list, id: int, curSum: int) -> tuple:
-    bestScore = float('-inf') # initialize with a low value
-    bestIndex = 0
-    bestFreq = frequency[bestIndex]
-    curPlayer = playerList[id-1]
-    for index, freq in enumerate(frequency):
-        if p_doubling[index] > 0.45 and (sum([player.stripes for player in playerList]) > PLAYERCOUNT*curPlayer.stripes):
-            if sum(frequency) == DICE:
-                curPlayer.increment_timesOneFirst()
-            return index, freq
+# TO DO: Refactor this method
+def best_choice_smart_risktaker(frequency: list, expected_stripes_for_self: list[int], expected_given_stripes_above_30: list[int], p_doubling: list[float], player_list: list[Player], id: int) -> tuple:
+    best_score = float('-inf') # initialize with a low value
+    best_index = 0
+    best_freq = frequency[best_index]
+    cur_player = player_list[id-1]
+    # Idea was to use a strategy that if probability of doubling is high and value then go low, but does not work that well
+    # for index, freq in enumerate(frequency):
+    #     if p_doubling[index] > 0.5 and (sum([player.stripes for player in player_list]) > PLAYERCOUNT*cur_player.stripes):
+    #         if sum(frequency) == DICE:
+    #             cur_player.increment_times_one_first()
+    #         return index, freq
     for index in range(len(frequency) - 1, -1, -1):
         freq = frequency[index]
         if freq > 0:
             give = 0
-            receive = expectedStripesForSelf[index]
+            receive = expected_stripes_for_self[index]
             # Calculate the score focusing on giving stripes
-            score = -exponential_utility(receive+curPlayer.stripes, curPlayer.beta) * curPlayer.getOwnUtility()
+            score = -exponential_utility(receive+cur_player.stripes, cur_player.beta) * cur_player.get_own_utility()
 
-            for playerIndex, player in enumerate(playerList):
-                if playerIndex != curPlayer.id - 1:
-                    give += exponential_utility(p_doubling[index], player.alpha) * player.stripes * curPlayer.utilities[playerIndex]
-            if curPlayer.id == len(playerList):
-                give += expectedGivenStripesAbove30[index] * curPlayer.utilities[0]
+            for player_index, player in enumerate(player_list):
+                if player_index != cur_player.id - 1:
+                    give += exponential_utility(p_doubling[index], player.alpha) * player.stripes * cur_player.utilities[player_index]
+            if cur_player.id == len(player_list):
+                give += expected_given_stripes_above_30[index] * cur_player.utilities[0]
             else:
-                give += expectedGivenStripesAbove30[index] * curPlayer.utilities[curPlayer.id]
+                give += expected_given_stripes_above_30[index] * cur_player.utilities[cur_player.id]
             score += give
 
 
-            if score > bestScore:
-                bestScore = score
-                bestIndex = index
-                bestFreq = freq
+            if score > best_score:
+                best_score = score
+                best_index = index
+                best_freq = freq
 
     if sum(frequency) == 6:
         for i in range(SIDES):
             if (frequency[i] > 0 and frequency[i] != 6) or (i == 0 and frequency[i] == 6):
-                if i == bestIndex:
-                    curPlayer.increment_timesOneFirst()
+                if i == best_index:
+                    cur_player.increment_times_one_first()
                 break
-    return bestIndex, bestFreq
+    return best_index, best_freq
 
 def process_player_stripes(cur_sum: int, player_list: list[Player], cur_player: Player) -> None:
     """Function to process giving stripes to each player after a turn
@@ -399,18 +400,18 @@ def process_player_stripes(cur_sum: int, player_list: list[Player], cur_player: 
         player_list: a list with all the players in the game
         cur_player: the current player
     """
-    stripes_taken, stripes_given, doubled = calculate_rewards(cur_sum)
-    if stripes_given > 0:
+    stripes_taken, stripes_given, doubled = calculate_rewards(cur_sum, player_list, cur_player)
+    if stripes_given > 0 and not doubled:
         cur_player.add_stripes_given(stripes_given)
         cur_player.update_best_extra_above_30(stripes_given)
         player_list[cur_player.id % PLAYERCOUNT].add_stripes(stripes_given) 
-    if stripes_taken > 0:
+    elif stripes_taken > 0:
         cur_player.add_stripes(stripes_taken)
-    if doubled:
+    else:
         cur_player.add_stripes_given(stripes_given)
         cur_player.update_best_doubling(stripes_given)
         cur_player.increment_doubling_count()
-        for player in playerList:
+        for player in player_list:
             if player.id == cur_player.id:
                 continue
             player.double_stripes()
@@ -438,7 +439,7 @@ def calculate_rewards(dice_sum: int, player_list: list[Player], cur_player: Play
             if frequency[extra_stripes - 1] == 0:
                 break
             dice_count -= frequency[extra_stripes - 1]
-            extra_stripes += extra_stripes * frequency[extra_stripes - 1]
+            stripes_given += extra_stripes * frequency[extra_stripes - 1]
             if dice_count == 0:
                 dice_count = 6
     elif dice_sum <= 10:
@@ -460,52 +461,52 @@ def plot_frequencies(frequencies: list[int], title:str, xlabel:str, ylabel:str) 
     plt.ylabel(ylabel)
     plt.show()
 
-def playRound(playerList: list[Player], dice_choice_freq_per_player: list[dict[int,int]]):
+def play_round(player_list: list[Player], dice_choice_freq_per_player: list[dict[int,int]]):
     for id in range(1, PLAYERCOUNT + 1):
-        curPlayer = playerList[id - 1]
-        strategy = curPlayer.strategy
-        if curPlayer.stripes >= 15:
-            curPlayer.drink()
-        diceCount = DICE
-        curSum = 0
+        cur_player = player_list[id - 1]
+        strategy = cur_player.strategy
+        if cur_player.stripes >= 15:
+            cur_player.drink()
+        dice_count = DICE
+        cur_sum = 0
         temp = []
         if strategy != "RiskTaker" and strategy != "RiskAverse" and strategy != "SmartRiskTaker":
-            print([f"Player {player.strategy} has {player.stripes} stripes" for player in playerList])
-        while diceCount > 0:
-            frequency = draw_dice(diceCount)
+            print([f"Player {player.strategy} has {player.stripes} stripes" for player in player_list])
+        while dice_count > 0:
+            frequency = draw_dice(dice_count)
             if strategy == "RiskTaker":
-                temp = risk_strategy(frequency, diceCount, curSum, id, dice_choice_freq_per_player, playerList)
+                temp = risk_strategy(frequency, dice_count, cur_sum, id, dice_choice_freq_per_player, player_list)
             elif strategy == "RiskAverse":
-                temp = risk_averse_strategy(frequency, diceCount, curSum, id, dice_choice_freq_per_player)
+                temp = risk_averse_strategy(frequency, dice_count, cur_sum, id, dice_choice_freq_per_player)
             elif strategy == "SmartRiskTaker":
-                expectedStripesForSelf, expectedGivenStripesAbove30, p_doubling = prepare_smart_risktaker(frequency, diceCount, curSum)
-                bestIndex, bestFreq = best_choice_smart_risktaker(frequency, expectedStripesForSelf, expectedGivenStripesAbove30, p_doubling, playerList, id, curSum)
-                temp = handle_dice(diceCount, curSum, bestIndex, bestFreq, id, dice_choice_freq_per_player)
+                expected_stripes_for_self, expected_given_stripes_above_30, p_doubling = prepare_smart_risktaker(frequency, dice_count, cur_sum)
+                best_index, best_freq = best_choice_smart_risktaker(frequency, expected_stripes_for_self, expected_given_stripes_above_30, p_doubling, player_list, id)
+                temp = handle_dice(dice_count, cur_sum, best_index, best_freq, id, dice_choice_freq_per_player)
             else:
-                temp = personal_strategy(frequency, diceCount, curSum, id, dice_choice_freq_per_player, playerList)
-            diceCount = temp[0]
-            curSum = temp[1]
-        process_player_stripes(curSum, playerList, curPlayer)
-        ending_sum_freq_per_player[id - 1][curSum] += 1  # Track ending sum for current player
+                temp = personal_strategy(frequency, dice_count, cur_sum, id, dice_choice_freq_per_player, player_list)
+            dice_count = temp[0]
+            cur_sum = temp[1]
+        process_player_stripes(cur_sum, player_list, cur_player)
+        ending_sum_freq_per_player[id - 1][cur_sum] += 1  # Track ending sum for current player
 
 
 
-def simulation(playerList: list[Player], dice_choice_freq_per_player: list[dict[int, int]]):
+def simulation(player_list: list[Player], dice_choice_freq_per_player: list[dict[int, int]]):
     for rep in range(REPLICATIONS):
-        playRound(playerList, dice_choice_freq_per_player)
+        play_round(player_list, dice_choice_freq_per_player)
     
     
 
-def showStatistics(playerList: list[Player], dice_choice_freq_per_player: list[dict[int,int]], ending_sum_freq_per_player: list[dict[int,int]], rounds: int):
-    for player in playerList:
+def show_statistics(player_list: list[Player], dice_choice_freq_per_player: list[dict[int,int]], ending_sum_freq_per_player: list[dict[int,int]], rounds: int):
+    for player in player_list:
         print("--------------------------------------------------------------------------------")
         print(player.strategy)
         print(f"player {player.id} had drunk {player.times_drunk / rounds:.3f} times per round and has given {player.stripes_given / rounds:.3f} stripes per round")
         print(f"player {player.id} went under 11 points {player.doubling_count / rounds:.4f} times per round")
-        print(f"player {player.id} succeeded {player.getDoublingSuccessRate():.4f} times with doubling")
-        print(f"player {player.id}'s given/taken ratio is {player.getGivenTakenRatio():.4f}")
-        print(f"player {player.id}'s best doubling amount was {player.bestDoubling}")
-        print(f"player {player.id}'s best extra stripes above 30 was {player.bestExtraAbove30}")
+        print(f"player {player.id} succeeded {player.get_doubling_success_rate():.4f} times with doubling")
+        print(f"player {player.id}'s given/taken ratio is {player.get_given_taken_ratio():.4f}")
+        print(f"player {player.id}'s best doubling amount was {player.best_doubling}")
+        print(f"player {player.id}'s best extra stripes above 30 was {player.best_extra_above_30}")
     
 
         # Plot frequencies of dice chosen for the current player
@@ -529,7 +530,7 @@ def showStatistics(playerList: list[Player], dice_choice_freq_per_player: list[d
 
 
 # actual game/simulation: 
-playerList = []
+player_list = []
 for i in range(1, PLAYERCOUNT + 1):
     strategy = input(f"What is the strategy for player {i}? (RiskTaker, RiskAverse, SmartRiskTaker or playSelf) ")
     if strategy == "playSelf":
@@ -537,24 +538,24 @@ for i in range(1, PLAYERCOUNT + 1):
     alpha, beta = 1.1, 0.04
     # if strategy == "SmartRiskTaker":
     #     alpha, beta = map(float, input("alpha,beta ").split(','))
-    playerList.append(Player(i, strategy, alpha, beta))
-for player in playerList:
+    player_list.append(Player(i, strategy, alpha, beta, IS_SIMULATION))
+for player in player_list:
     if (player.strategy == "SmartRiskTaker"):
-        for index in range(len(playerList)):
+        for index in range(len(player_list)):
             if player.id == (index+1):
-                player.addUtility(PLAYERCOUNT-1)
+                player.add_utility(PLAYERCOUNT-1)
             else:
-                player.addUtility(1)
+                player.add_utility(1)
 
 # Initialize tracking dictionaries for each player
 dice_choice_freq_per_player = [{i: 0 for i in range(1, SIDES + 1)} for _ in range(PLAYERCOUNT)]
 ending_sum_freq_per_player = [{i: 0 for i in range(DICE * SIDES + 1)} for _ in range(PLAYERCOUNT)]
 
 if IS_SIMULATION:
-    simulation(playerList, dice_choice_freq_per_player)
+    simulation(player_list, dice_choice_freq_per_player)
 
     
-showStatistics(playerList, dice_choice_freq_per_player, ending_sum_freq_per_player, REPLICATIONS)
+show_statistics(player_list, dice_choice_freq_per_player, ending_sum_freq_per_player, REPLICATIONS)
 
 
 exit()
@@ -944,7 +945,7 @@ class Game:
                         diceCount -=1
                         curSum += die.value
                 expectedStripesForSelf, expectedGivenStripesAbove30, p_doubling = prepare_smart_risktaker(frequency, diceCount, curSum)
-                choice, _ = best_choice_smart_risktaker(frequency, expectedStripesForSelf, expectedGivenStripesAbove30, p_doubling, self.players, cur_player.id, curSum)
+                choice, _ = best_choice_smart_risktaker(frequency, expectedStripesForSelf, expectedGivenStripesAbove30, p_doubling, self.players, cur_player.id)
                 choice += 1 # in the method we get an value which is 0-indexed
             return choice
 
@@ -1018,7 +1019,7 @@ running = True
 # value for the scoreboard
 tab_key_pressed = False
 # Initialize the game with players
-game = Game(playerList)
+game = Game(player_list)
 AI = ["RiskTaker", "RiskAverse", "SmartRiskTaker"]
 
 while running:
@@ -1066,7 +1067,7 @@ while running:
 pygame.quit()
 
 if input("Do you want to view the statistics? ").strip().lower() == "yes":
-    showStatistics(playerList, dice_choice_freq_per_player, ending_sum_freq_per_player, game.rounds)
+    show_statistics(player_list, dice_choice_freq_per_player, ending_sum_freq_per_player, game.rounds)
 
 
 
