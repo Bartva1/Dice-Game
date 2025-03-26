@@ -1,9 +1,11 @@
 import random as rand
+import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import math
 import pygame
 import time
+from tqdm import tqdm
 rand.seed(int(time.time()))
 
 import os
@@ -215,6 +217,71 @@ class Player:
     def get_row(self):
         return [self._strategy, self._stripes, self._times_drunk, self._doubling_count, self._stripes_given]
 
+class Agent:
+    def __init__(self,
+                epsilon_init: float,
+                epsilon_decay: float,
+                epsilon_final: float,
+                alpha: float,
+                gamma: float,
+                id: int):
+        self.q_values = [[0] * 37 for _ in range(7)]
+
+        self.epsilon = epsilon_init
+        self.epsilon_decay = epsilon_decay
+        self.epsilon_final = epsilon_final
+        
+        self.learning_rate = alpha
+        self.discount_rate = gamma
+        self.id = id
+
+        self.training_errors = []
+
+    def get_action(self, freq: list[int], cur_sum):
+        valid_indices = [i for i, x in enumerate(freq) if x != 0] 
+        if (np.random.random() < self.epsilon):
+            return rand.choice(valid_indices)
+        else:
+            best_idx = valid_indices[-1]
+            dice_count = DICE - sum(freq)
+            for i in valid_indices:
+                count = freq[i]
+                contender_val = self.q_values[dice_count + count][cur_sum + count * (i+1)]
+                best_val = self.q_values[dice_count + freq[best_idx]][cur_sum + freq[best_idx] * (best_idx+1)]
+                if contender_val > best_val:
+                    best_idx = i
+            return best_idx
+          
+    
+    def update(self,
+               cur_sum: int,
+               freq: list[int],
+               reward: float,
+               terminated: bool,
+               next_freq: list[int]):
+    
+        max_q_value = 0
+        dice_chosen = DICE - sum(freq)
+        if not terminated:
+            for idx, count in enumerate(next_freq):
+                if count > 0:
+                    max_q_value = max(max_q_value, self.q_values[dice_chosen + count][cur_sum + count *(idx+1)])
+
+        temporal_difference = reward + self.discount_factor*max_q_value - self.q_values[dice_chosen][cur_sum] # rightside of formula, difference in value
+        self.q_values[dice_chosen][cur_sum] += self.learning_rate * temporal_difference # you weight the difference by alpha, the learning rate
+        self.training_errors.append(temporal_difference) # you add the difference to a list, so you can see how much the policy changes
+    
+    def decay(self):
+        self.epsilon = max(self.epsilon_final, self.epsilon - self.epsilon_decay)
+        
+
+
+learning_rate = 0.01
+n_episodes = 1_000_000
+start_epsilon = 1
+epsilon_decay = start_epsilon / (n_episodes / 2)
+final_epsilon = 0.1
+
 
 REPLICATIONS = 100000
 DICE = 6
@@ -274,18 +341,27 @@ def x_sqrt_x_utility(x: float) -> float:
     utility = x * math.sqrt(x)
     return  utility
 
-def draw_dice(diceCount: int) -> list:
+def draw_dice(dice_count: int) -> list[int]:
     """Used to get new action space
     
     Args:
-        diceCount: number of dice to throw
+        dice_count: number of dice to throw
     """
     frequency = [0] * SIDES
-    for _ in range(diceCount):
+    for _ in range(dice_count):
         frequency[rand.randint(0, SIDES-1)] += 1
     return frequency
 
 def handle_dice(dice_count: int, cur_sum: int, index: int, freq: int, id: int, dice_choice_freq_per_player: list[dict[int, int]]) -> tuple[int, int]:
+    """Function used to take an action with index+1 being the dice chosen,
+    outputs the new dice count and new sum after picking these die.
+    
+    Args:
+        dice_count: number of dice not yet taken
+        cur_sum: current sum of die taken
+        index: index in freq of the die chosen (0-indexed)
+        freq: frequency of the die chosen
+        dice_choice_freq_per_player: list of dictionaries used to capture the stats per player"""
     dice_count -= freq
     dice_choice_freq_per_player[id-1][index+1] += freq
     cur_sum += freq * (index+1)
@@ -316,7 +392,7 @@ def personal_strategy(frequency: list, dice_count: int, cur_sum: int, id: int, d
             if i == index:
                 player_list[id-1].increment_times_one_first
             break
-    [dice_count, cur_sum] = handle_dice(dice_count, cur_sum, index, frequency[index], id, dice_choice_freq_per_player)
+    dice_count, cur_sum = handle_dice(dice_count, cur_sum, index, frequency[index], id, dice_choice_freq_per_player)
     return dice_count, cur_sum
 
 # TO DO: Refactor this method
@@ -492,7 +568,7 @@ def play_round(player_list: list[Player], dice_choice_freq_per_player: list[dict
 
 
 def simulation(player_list: list[Player], dice_choice_freq_per_player: list[dict[int, int]]):
-    for rep in range(REPLICATIONS):
+    for _ in tqdm(range(REPLICATIONS)):
         play_round(player_list, dice_choice_freq_per_player)
     
     
@@ -528,6 +604,12 @@ def show_statistics(player_list: list[Player], dice_choice_freq_per_player: list
         )
     print("--------------------------------------------------------------------------------")    
 
+# Initialize tracking dictionaries for each player
+dice_choice_freq_per_player = [{i: 0 for i in range(1, SIDES + 1)} for _ in range(PLAYERCOUNT)]
+ending_sum_freq_per_player = [{i: 0 for i in range(DICE * SIDES + 1)} for _ in range(PLAYERCOUNT)]
+
+
+
 
 # actual game/simulation: 
 player_list = []
@@ -547,15 +629,79 @@ for player in player_list:
             else:
                 player.add_utility(1)
 
-# Initialize tracking dictionaries for each player
-dice_choice_freq_per_player = [{i: 0 for i in range(1, SIDES + 1)} for _ in range(PLAYERCOUNT)]
-ending_sum_freq_per_player = [{i: 0 for i in range(DICE * SIDES + 1)} for _ in range(PLAYERCOUNT)]
+RL_agent = Agent( 
+        gamma=0.95,
+        epsilon_init=start_epsilon, 
+        epsilon_decay=epsilon_decay, 
+        epsilon_final=final_epsilon, 
+        alpha=learning_rate,
+        id=PLAYERCOUNT+1
+    )
+
+for episode in tqdm(range(n_episodes)):
+    obs = draw_dice(DICE)
+    cur_sum = 0
+    reward = 0
+    while any(obs > 0):
+        action = RL_agent.get_action(obs, cur_sum) # action is a number that they picked
+        dice_count, cur_sum = handle_dice(sum(obs), cur_sum, action-1, obs[action-1], RL_agent.id, dice_choice_freq_per_player)
+        next_obs = draw_dice(dice_count)
+        terminated = all(x == 0 for x in next_obs)
+        if terminated:
+            stripes_taken, stripes_given, _ = calculate_rewards(cur_sum, player_list, player_list[RL_agent.id])
+            reward = stripes_given - stripes_taken
+
+        RL_agent.update(cur_sum, obs, action, reward, terminated, next_obs)
+        obs = next_obs
+
+    RL_agent.decay()
+
+
+def get_moving_avgs(arr, window, convolution_mode):
+    return np.convolve(
+        np.array(arr).flatten(),
+        np.ones(window),
+        mode=convolution_mode
+    ) / window
+
+rolling_len = 500
+fig, axs = plt.subplots(ncols=3, figsize=(12,5))
+
+axs[0].set_title("Episode Rewards")
+reward_moving_average = get_moving_avgs(
+    env.return_queue,
+    rolling_len,
+    "valid"
+)
+axs[0].plot(range(len(reward_moving_average)), reward_moving_average)
+
+
+axs[1].set_title("Episode Lengths")
+length_moving_average = get_moving_avgs(
+    env.length_queue,
+    rolling_len,
+    "valid"
+)
+axs[1].plot(range(len(length_moving_average)), length_moving_average)
+
+axs[2].set_title("Training Error")
+training_error_moving_average = get_moving_avgs(
+    car.training_error,
+    rolling_len,
+    "same"
+)
+axs[2].plot(range(len(training_error_moving_average)), training_error_moving_average)
+plt.tight_layout()
+plt.show()
+ 
+exit()
 
 if IS_SIMULATION:
     simulation(player_list, dice_choice_freq_per_player)
 
-    
-show_statistics(player_list, dice_choice_freq_per_player, ending_sum_freq_per_player, REPLICATIONS)
+SHOW_STATS = str(input("Do you want to view the statistics? (y/n) "))
+if SHOW_STATS == 'y':   
+    show_statistics(player_list, dice_choice_freq_per_player, ending_sum_freq_per_player, REPLICATIONS)
 
 
 exit()
