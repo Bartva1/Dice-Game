@@ -297,7 +297,7 @@ class Agent:
 
 
 
-REPLICATIONS = 100000
+REPLICATIONS = 10000000
 DICE = 6
 SIDES = 6
 
@@ -550,18 +550,23 @@ def choices_QLearner(RL_agent: Agent):
     reward = 0
     while any(val > 0 for val in obs):
         action = RL_agent.get_action(obs, cur_sum) # action is a number that they picked
-        dice_count, cur_sum = handle_dice(sum(obs), cur_sum, action-1, obs[action-1], RL_agent.id, dice_choice_freq_per_player)
+        dice_count, cur_sum = handle_dice(sum(obs), cur_sum, action, obs[action], RL_agent.id, dice_choice_freq_per_player)
         next_obs = draw_dice(dice_count)
         terminated = all(x == 0 for x in next_obs)
         if terminated:
-            stripes_taken, stripes_given, _ = calculate_rewards(cur_sum, player_list, player_list[RL_agent.id])
-            reward = stripes_given - stripes_taken
+            stripes_taken, stripes_given, _ = calculate_rewards(cur_sum, player_list, player_list[RL_agent.id-1])
+            reward = -stripes_taken
+            RL_agent.update(cur_sum, obs, reward, terminated, next_obs)
+            break
 
         RL_agent.update(cur_sum, obs, reward, terminated, next_obs)
         obs = next_obs
-       
 
     RL_agent.decay()
+    return cur_sum
+       
+
+    
 
 def plot_frequencies(frequencies: list[int], title:str, xlabel:str, ylabel:str) -> None:
     plt.figure(figsize=(10, 6))
@@ -577,30 +582,32 @@ def play_round(player_list: list[Player], dice_choice_freq_per_player: list[dict
     for id in range(1, PLAYERCOUNT + 1):
         cur_player = player_list[id - 1]
         strategy = cur_player.strategy
-        if (strategy == "QLearner"):
-            choices_QLearner(cur_player.agent)
-            return
+        
         if cur_player.stripes >= 15:
             cur_player.drink()
         dice_count = DICE
         cur_sum = 0
         temp = []
-        if strategy != "RiskTaker" and strategy != "RiskAverse" and strategy != "SmartRiskTaker":
+        
+        if strategy != "QLearner" and strategy != "RiskTaker" and strategy != "RiskAverse" and strategy != "SmartRiskTaker":
             print([f"Player {player.strategy} has {player.stripes} stripes" for player in player_list])
-        while dice_count > 0:
-            frequency = draw_dice(dice_count)
-            if strategy == "RiskTaker":
-                temp = risk_strategy(frequency, dice_count, cur_sum, id, dice_choice_freq_per_player, player_list)
-            elif strategy == "RiskAverse":
-                temp = risk_averse_strategy(frequency, dice_count, cur_sum, id, dice_choice_freq_per_player)
-            elif strategy == "SmartRiskTaker":
-                expected_stripes_for_self, expected_given_stripes_above_30, p_doubling = prepare_smart_risktaker(frequency, dice_count, cur_sum)
-                best_index, best_freq = best_choice_smart_risktaker(frequency, expected_stripes_for_self, expected_given_stripes_above_30, p_doubling, player_list, id)
-                temp = handle_dice(dice_count, cur_sum, best_index, best_freq, id, dice_choice_freq_per_player)
-            else:
-                temp = personal_strategy(frequency, dice_count, cur_sum, id, dice_choice_freq_per_player, player_list)
-            dice_count = temp[0]
-            cur_sum = temp[1]
+        if (strategy == "QLearner"):
+            cur_sum = choices_QLearner(cur_player.agent)
+        else:
+            while dice_count > 0:
+                frequency = draw_dice(dice_count)
+                if strategy == "RiskTaker":
+                    temp = risk_strategy(frequency, dice_count, cur_sum, id, dice_choice_freq_per_player, player_list)
+                elif strategy == "RiskAverse":
+                    temp = risk_averse_strategy(frequency, dice_count, cur_sum, id, dice_choice_freq_per_player)
+                elif strategy == "SmartRiskTaker":
+                    expected_stripes_for_self, expected_given_stripes_above_30, p_doubling = prepare_smart_risktaker(frequency, dice_count, cur_sum)
+                    best_index, best_freq = best_choice_smart_risktaker(frequency, expected_stripes_for_self, expected_given_stripes_above_30, p_doubling, player_list, id)
+                    temp = handle_dice(dice_count, cur_sum, best_index, best_freq, id, dice_choice_freq_per_player)
+                else:
+                    temp = personal_strategy(frequency, dice_count, cur_sum, id, dice_choice_freq_per_player, player_list)
+                dice_count = temp[0]
+                cur_sum = temp[1]
         process_player_stripes(cur_sum, player_list, cur_player)
         ending_sum_freq_per_player[id - 1][cur_sum] += 1  # Track ending sum for current player
 
