@@ -30,10 +30,10 @@ class Player:
         self._agent = None
         if (strategy == "QLearner"):
             self._agent = Agent(
-                gamma=0.95,
+                gamma=0.9,
                 epsilon_init=1.0, 
-                epsilon_decay=0.00002, 
-                epsilon_final=0.1, 
+                epsilon_decay=0.0001, 
+                epsilon_final=0.01, 
                 alpha=0.01,
                 id=id
             )
@@ -297,7 +297,7 @@ class Agent:
 
 
 
-REPLICATIONS = 10000000
+REPLICATIONS = 1000000
 DICE = 6
 SIDES = 6
 
@@ -550,16 +550,21 @@ def choices_QLearner(RL_agent: Agent):
     reward = 0
     while any(val > 0 for val in obs):
         action = RL_agent.get_action(obs, cur_sum) # action is a number that they picked
+
+        prev_sum = cur_sum
         dice_count, cur_sum = handle_dice(sum(obs), cur_sum, action, obs[action], RL_agent.id, dice_choice_freq_per_player)
         next_obs = draw_dice(dice_count)
         terminated = all(x == 0 for x in next_obs)
         if terminated:
-            stripes_taken, stripes_given, _ = calculate_rewards(cur_sum, player_list, player_list[RL_agent.id-1])
+            stripes_taken, stripes_given, doubled = calculate_rewards(cur_sum, player_list, player_list[RL_agent.id-1])
             reward = -stripes_taken
-            RL_agent.update(cur_sum, obs, reward, terminated, next_obs)
+            reward += 0 if doubled else stripes_given
+            
+        RL_agent.update(prev_sum, obs, reward, terminated, next_obs)
+        
+        if terminated:
             break
-
-        RL_agent.update(cur_sum, obs, reward, terminated, next_obs)
+        
         obs = next_obs
 
     RL_agent.decay()
@@ -578,7 +583,7 @@ def plot_frequencies(frequencies: list[int], title:str, xlabel:str, ylabel:str) 
     plt.ylabel(ylabel)
     plt.show()
 
-def play_round(player_list: list[Player], dice_choice_freq_per_player: list[dict[int,int]]):
+def play_round(player_list: list[Player], dice_choice_freq_per_player: list[dict[int,int]], rep: int):
     for id in range(1, PLAYERCOUNT + 1):
         cur_player = player_list[id - 1]
         strategy = cur_player.strategy
@@ -609,13 +614,14 @@ def play_round(player_list: list[Player], dice_choice_freq_per_player: list[dict
                 dice_count = temp[0]
                 cur_sum = temp[1]
         process_player_stripes(cur_sum, player_list, cur_player)
-        ending_sum_freq_per_player[id - 1][cur_sum] += 1  # Track ending sum for current player
+        if strategy != 'QLearner' or rep >= REPLICATIONS // 2:
+            ending_sum_freq_per_player[id - 1][cur_sum] += 1  # Track ending sum for current player
 
 
 
 def simulation(player_list: list[Player], dice_choice_freq_per_player: list[dict[int, int]]):
-    for _ in tqdm(range(REPLICATIONS)):
-        play_round(player_list, dice_choice_freq_per_player)
+    for rep in tqdm(range(REPLICATIONS)):
+        play_round(player_list, dice_choice_freq_per_player, rep)
     
     
 
@@ -679,6 +685,13 @@ if IS_SIMULATION:
 SHOW_STATS = str(input("Do you want to view the statistics? (y/n) "))
 if SHOW_STATS == 'y':   
     show_statistics(player_list, dice_choice_freq_per_player, ending_sum_freq_per_player, REPLICATIONS)
+
+for player in player_list:
+    if player.strategy == "QLearner":
+        with open(f"q_table_{player.id}.txt", "w") as f:
+            for row in player.agent.q_values:
+                f.write("  ".join(f"{val:.2f}" for val in row) + "\n")
+
 
 
 exit()
