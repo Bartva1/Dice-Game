@@ -26,7 +26,7 @@ from typing import List, Callable, Tuple
 
 # TO DO: reorganize this class
 class Player:
-    def __init__(self, id: int, strategy: str, alpha: float, beta: float, is_simulation = False):
+    def __init__(self, id: int, strategy: str, alpha: float, beta: float, is_simulation: bool = False, use_doubling: bool= False):
         self._agent = None
         if (strategy == "QLearner"):
             self._agent = Agent(
@@ -35,7 +35,8 @@ class Player:
                 epsilon_decay=0.0001, 
                 epsilon_final=0.01, 
                 alpha=0.01,
-                id=id
+                id=id,
+                use_doubling = use_doubling
             )
         self._id = id # 1-indexed
         self._strategy = strategy
@@ -243,7 +244,8 @@ class Agent:
                 epsilon_final: float,
                 alpha: float,
                 gamma: float,
-                id: int):
+                id: int,
+                use_doubling: bool):
         self.q_values = [[0] * 37 for _ in range(7)]
 
         self.epsilon = epsilon_init
@@ -253,6 +255,7 @@ class Agent:
         self.learning_rate = alpha
         self.discount_factor = gamma
         self.id = id
+        self.use_doubling = use_doubling 
 
         self.training_errors = []
 
@@ -558,13 +561,14 @@ def choices_QLearner(RL_agent: Agent):
         if terminated:
             stripes_taken, stripes_given, doubled = calculate_rewards(cur_sum, player_list, player_list[RL_agent.id-1])
             reward = -stripes_taken
-            reward += 0 if doubled else stripes_given
+            if RL_agent.use_doubling or not doubled:
+                reward += stripes_given
             
         RL_agent.update(prev_sum, obs, reward, terminated, next_obs)
         
         if terminated:
             break
-        
+
         obs = next_obs
 
     RL_agent.decay()
@@ -667,9 +671,12 @@ for i in range(1, PLAYERCOUNT + 1):
     if strategy == "playSelf":
         strategy = input("What is your name? ")
     alpha, beta = 1.1, 0.04
-    # if strategy == "SmartRiskTaker":
-    #     alpha, beta = map(float, input("alpha,beta ").split(','))
-    player_list.append(Player(i, strategy, alpha, beta, IS_SIMULATION))
+    if strategy == "QLearner":
+        temp = input("Do you want to use rewards for doubling? (y/n) ")
+        use_doubling = temp == "y"
+        player_list.append(Player(i, strategy, alpha, beta, IS_SIMULATION, use_doubling))
+    else:
+        player_list.append(Player(i, strategy, alpha, beta, IS_SIMULATION))
 for player in player_list:
     if (player.strategy == "SmartRiskTaker"):
         for index in range(len(player_list)):
@@ -688,7 +695,7 @@ if SHOW_STATS == 'y':
 
 for player in player_list:
     if player.strategy == "QLearner":
-        with open(f"q_table_{player.id}.txt", "w") as f:
+        with open(f"q_table_{player.agent.use_doubling}.txt", "w") as f:
             for row in player.agent.q_values:
                 f.write("  ".join(f"{val:.2f}" for val in row) + "\n")
 
