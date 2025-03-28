@@ -23,6 +23,7 @@ from typing import List, Callable, Tuple
 # 1. Add doc comments to each class and method
 # 2. Refactor longer methods
 # 3. Split game part and Simulation/RL agent part
+# 4. Possibly add another state which is maybe like an interval of number of stripes in the game
 
 # TO DO: reorganize this class
 class Player:
@@ -258,6 +259,7 @@ class Agent:
         self.use_doubling = use_doubling 
 
         self.training_errors = []
+        self.episode_rewards = []
 
     def get_action(self, freq: list[int], cur_sum: int):
         valid_indices = [i for i, x in enumerate(freq) if x != 0] 
@@ -292,6 +294,7 @@ class Agent:
         temporal_difference = reward + self.discount_factor*max_q_value - self.q_values[dice_chosen][cur_sum] # rightside of formula, difference in value
         self.q_values[dice_chosen][cur_sum] += self.learning_rate * temporal_difference # you weight the difference by alpha, the learning rate
         self.training_errors.append(temporal_difference) # you add the difference to a list, so you can see how much the policy changes
+        
     
     def decay(self):
         self.epsilon = max(self.epsilon_final, self.epsilon - self.epsilon_decay)
@@ -300,7 +303,7 @@ class Agent:
 
 
 
-REPLICATIONS = 1000000
+REPLICATIONS = 500000
 DICE = 6
 SIDES = 6
 
@@ -563,6 +566,7 @@ def choices_QLearner(RL_agent: Agent):
             reward = -stripes_taken
             if RL_agent.use_doubling or not doubled:
                 reward += stripes_given
+            RL_agent.episode_rewards.append(reward)
             
         RL_agent.update(prev_sum, obs, reward, terminated, next_obs)
         
@@ -693,16 +697,7 @@ SHOW_STATS = str(input("Do you want to view the statistics? (y/n) "))
 if SHOW_STATS == 'y':   
     show_statistics(player_list, dice_choice_freq_per_player, ending_sum_freq_per_player, REPLICATIONS)
 
-for player in player_list:
-    if player.strategy == "QLearner":
-        with open(f"q_table_{player.agent.use_doubling}.txt", "w") as f:
-            for row in player.agent.q_values:
-                f.write("  ".join(f"{val:.2f}" for val in row) + "\n")
 
-
-
-exit()
-    
 
 
 def get_moving_avgs(arr, window, convolution_mode):
@@ -712,36 +707,42 @@ def get_moving_avgs(arr, window, convolution_mode):
         mode=convolution_mode
     ) / window
 
-rolling_len = 500
-fig, axs = plt.subplots(ncols=3, figsize=(12,5))
 
-axs[0].set_title("Episode Rewards")
-reward_moving_average = get_moving_avgs(
-    env.return_queue,
-    rolling_len,
-    "valid"
-)
-axs[0].plot(range(len(reward_moving_average)), reward_moving_average)
+for player in player_list:
+    if player.strategy == "QLearner":
+        with open(f"q_table{player.agent.use_doubling}.txt", "w") as f:
+            for row in player.agent.q_values:
+                f.write("  ".join(f"{val:.2f}" for val in row) + "\n")
+        
+        rolling_len = 500
+        fig, axs = plt.subplots(ncols=2, figsize=(12,5))
+
+        axs[0].set_title("Episode Rewards")
+        reward_moving_average = get_moving_avgs(
+            player.agent.episode_rewards,
+            rolling_len,
+            "valid"
+        )
+        axs[0].plot(range(len(reward_moving_average)), reward_moving_average)
 
 
-axs[1].set_title("Episode Lengths")
-length_moving_average = get_moving_avgs(
-    env.length_queue,
-    rolling_len,
-    "valid"
-)
-axs[1].plot(range(len(length_moving_average)), length_moving_average)
 
-axs[2].set_title("Training Error")
-training_error_moving_average = get_moving_avgs(
-    car.training_error,
-    rolling_len,
-    "same"
-)
-axs[2].plot(range(len(training_error_moving_average)), training_error_moving_average)
-plt.tight_layout()
-plt.show()
+        axs[1].set_title("Training Error")
+        training_error_moving_average = get_moving_avgs(
+            player.agent.training_errors,
+            rolling_len,
+            "same"
+        )
+        axs[1].plot(range(len(training_error_moving_average)), training_error_moving_average)
+        plt.tight_layout()
+        plt.show()
+
+    
+
+
+
  
+exit()
 
 
 
