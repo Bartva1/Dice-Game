@@ -7,6 +7,7 @@ import pygame
 import time
 from tqdm import tqdm
 rand.seed(int(time.time()))
+from collections import defaultdict
 
 import os
 from typing import List, Callable, Tuple
@@ -33,7 +34,7 @@ class Player:
             self._agent = Agent(
                 gamma=0.9,
                 epsilon_init=1.0, 
-                epsilon_decay=0.0001, 
+                epsilon_decay=0.001, 
                 epsilon_final=0.01, 
                 alpha=0.01,
                 id=id,
@@ -152,7 +153,6 @@ class Player:
     @property
     def beta(self) -> float:
         return self._beta
-    
     @property 
     def is_simulation(self) -> bool:
         return self._is_simulation
@@ -247,7 +247,10 @@ class Agent:
                 gamma: float,
                 id: int,
                 use_doubling: bool):
+        
         self.q_values = [[0] * 37 for _ in range(7)]
+        self.q_table = defaultdict(lambda: 0)
+      
 
         self.epsilon = epsilon_init
         self.epsilon_decay = epsilon_decay
@@ -257,17 +260,23 @@ class Agent:
         self.discount_factor = gamma
         self.id = id
         self.use_doubling = use_doubling 
+        self.interval_size = 10
 
         self.training_errors = []
         self.episode_rewards = []
 
-    def get_action(self, freq: list[int], cur_sum: int):
+
+    def get_stripe_index(self, stripes_sum: int) -> int:
+        return stripes_sum // self.interval_size
+
+    def get_action(self, freq: list[int], cur_sum: int, stripes_sum: int):
         valid_indices = [i for i, x in enumerate(freq) if x != 0] 
         if (np.random.random() < self.epsilon):
             return rand.choice(valid_indices)
         else:
             best_idx = valid_indices[-1]
             dice_count = DICE - sum(freq)
+            stripes_index = self.get_stripe_index(stripes_sum)
             for i in valid_indices:
                 count = freq[i]
                 contender_val = self.q_values[dice_count + count][cur_sum + count * (i+1)]
@@ -282,8 +291,9 @@ class Agent:
                freq: list[int],
                reward: float,
                terminated: bool,
-               next_freq: list[int]):
-    
+               next_freq: list[int],
+               stripes_sum: int):
+        stripes_index = self.get_stripe_index(stripes_sum)
         max_q_value = 0
         dice_chosen = DICE - sum(freq)
         if not terminated:
@@ -298,6 +308,9 @@ class Agent:
     
     def decay(self):
         self.epsilon = max(self.epsilon_final, self.epsilon - self.epsilon_decay)
+
+    def stop_exploring(self):
+        self.epsilon = 0
         
 
 
@@ -551,13 +564,17 @@ def calculate_rewards(dice_sum: int, player_list: list[Player], cur_player: Play
         stripes_taken = 30 - dice_sum
     return stripes_taken, stripes_given, doubled
 
-def choices_QLearner(RL_agent: Agent):
+def choices_QLearner(RL_agent: Agent, player_list: List[Player]):
     obs = draw_dice(DICE)
     cur_sum = 0
     reward = 0
-    while any(val > 0 for val in obs):
-        action = RL_agent.get_action(obs, cur_sum) # action is a number that they picked
+    stripes_sum = 0
+    for player in player_list:
+        if player.strategy != "QLearner" or player.agent != RL_agent:
+            stripes_sum += player.stripes
 
+    while any(val > 0 for val in obs):
+        action = RL_agent.get_action(obs, cur_sum, stripes_sum) # action is a number that they picked
         prev_sum = cur_sum
         dice_count, cur_sum = handle_dice(sum(obs), cur_sum, action, obs[action], RL_agent.id, dice_choice_freq_per_player)
         next_obs = draw_dice(dice_count)
@@ -569,7 +586,7 @@ def choices_QLearner(RL_agent: Agent):
                 reward += stripes_given
             RL_agent.episode_rewards.append(reward)
             
-        RL_agent.update(prev_sum, obs, reward, terminated, next_obs)
+        RL_agent.update(prev_sum, obs, reward, terminated, next_obs, stripes_sum)
         
         if terminated:
             break
@@ -606,7 +623,7 @@ def play_round(player_list: list[Player], dice_choice_freq_per_player: list[dict
         if strategy != "QLearner" and strategy != "RiskTaker" and strategy != "RiskAverse" and strategy != "SmartRiskTaker":
             print([f"Player {player.strategy} has {player.stripes} stripes" for player in player_list])
         if (strategy == "QLearner"):
-            cur_sum = choices_QLearner(cur_player.agent)
+            cur_sum = choices_QLearner(cur_player.agent, player_list)
         else:
             while dice_count > 0:
                 frequency = draw_dice(dice_count)
@@ -740,11 +757,12 @@ for player in player_list:
 
     
 
+for player in player_list:
+    player.reset()
+    if player.strategy == "QLearner":
+        player.agent.stop_exploring()
 
 exit()
-
-
-
 
 # constants and initialization
 WIDTH, HEIGHT = 800, 600
@@ -1127,9 +1145,17 @@ class Game:
                     else:
                         diceCount -=1
                         curSum += die.value
-                expectedStripesForSelf, expectedGivenStripesAbove30, p_doubling = prepare_smart_risktaker(frequency, diceCount, curSum)
-                choice, _ = best_choice_smart_risktaker(frequency, expectedStripesForSelf, expectedGivenStripesAbove30, p_doubling, self.players, cur_player.id)
-                choice += 1 # in the method we get an value which is 0-indexed
+                if cur_player.strategy == "SmartRiskTaker":
+                    expectedStripesForSelf, expectedGivenStripesAbove30, p_doubling = prepare_smart_risktaker(frequency, diceCount, curSum)
+                    choice, _ = best_choice_smart_risktaker(frequency, expectedStripesForSelf, expectedGivenStripesAbove30, p_doubling, self.players, cur_player.id)
+                    choice += 1 # in the method we get an value which is 0-indexed
+                else:
+                    stripes_sum = 0
+                    for player in player_list:
+                        if player != cur_player:
+                            stripes_sum += player.stripes
+                    choice = cur_player.agent.get_action(frequency, curSum, stripes_sum) + 1 
+
             return choice
 
 
@@ -1203,7 +1229,7 @@ running = True
 tab_key_pressed = False
 # Initialize the game with players
 game = Game(player_list)
-AI = ["RiskTaker", "RiskAverse", "SmartRiskTaker"]
+AI = ["RiskTaker", "RiskAverse", "SmartRiskTaker", "QLearner"]
 
 while running:
     for event in pygame.event.get():
