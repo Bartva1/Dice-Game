@@ -12,13 +12,6 @@ from collections import defaultdict
 import os
 from typing import List, Callable, Tuple
 
-# Lines 17-211 is player class, wordt gebruikt voor beide simulatie en gui
-# Lines 212 - 519 zijn de simulatie, als je die wil gebruiken moeten er een paar "#" worden weggehaald
-# Lines 533 - 1036 is de GUI, eerst classes, daarna de game loop, in de game loop zie je welke events kunnen gebeuren en hoe
-
-
-# IDEA: use fixed reward for each ending of dice as you are not dependent on what kind of player you are up against
-
 
 # GENERAL TO DO:  
 # 1. Add doc comments to each class and method
