@@ -303,7 +303,7 @@ class Agent:
 
 
 
-REPLICATIONS = 500000
+REPLICATIONS = 100000
 DICE = 6
 SIDES = 6
 
@@ -508,7 +508,7 @@ def process_player_stripes(cur_sum: int, player_list: list[Player], cur_player: 
         player_list[cur_player.id % PLAYERCOUNT].add_stripes(stripes_given) 
     elif stripes_taken > 0:
         cur_player.add_stripes(stripes_taken)
-    else:
+    elif doubled:
         cur_player.add_stripes_given(stripes_given)
         cur_player.update_best_doubling(stripes_given)
         cur_player.increment_doubling_count()
@@ -516,6 +516,7 @@ def process_player_stripes(cur_sum: int, player_list: list[Player], cur_player: 
             if player.id == cur_player.id:
                 continue
             player.double_stripes()
+    
         
 
 
@@ -740,8 +741,6 @@ for player in player_list:
     
 
 
-
- 
 exit()
 
 
@@ -753,8 +752,8 @@ WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
 CHOOSE_COLOUR = (44, 117, 255)
 HOLD_COLOUR = (139, 0, 0)
-DICE_IMAGE_PATH = r"C:\Users\bartv\Documents\VScodeProjects\Python\Images"
-FONT_PATH = r'C:\Users\bartv\Documents\VScodeProjects\Fonts\Roboto-Medium.ttf'
+DICE_IMAGE_PATH = r"Images"
+FONT_PATH = r"Fonts/Roboto-Medium.ttf"
 DICE_ICON_PATH = os.path.join(DICE_IMAGE_PATH, 'dice_icon.png')
 ANIMATION_DURATION = 0.5  # Duration of the animation in seconds
 WAIT_DURATION = 1.5 # Duration until next roll for AI turns
@@ -1174,7 +1173,7 @@ class Game:
 
                 self.is_special_turn = False
                 self.players[self.current_player_index].add_stripes_given(self.stripes)
-                self.players[self.current_player_index].update_bestExtraAbove30(self.stripes)
+                self.players[self.current_player_index].update_best_extra_above_30(self.stripes)
                 self.players[(self.current_player_index + 1) % len(self.players)].add_stripes(self.stripes)
                 self.next_player()
                 self.start_roll_animation()
