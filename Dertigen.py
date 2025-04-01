@@ -20,15 +20,25 @@ from typing import List, Callable, Tuple
 # 4. Possibly add another state which is maybe like an interval of number of stripes in the game
 
 # TO DO: reorganize this class
+
+REPLICATIONS = 100000
+DICE = 6
+SIDES = 6
+
+PLAYERCOUNT = int(input("How many players do you want in this game? "))
+# IS_SIMULATION = input("Do you want to run a simulation? (True/False) ")
+# IS_SIMULATION = True if IS_SIMULATION == "True" else False
+IS_SIMULATION = True
+
 class Player:
     def __init__(self, id: int, strategy: str, alpha: float, beta: float, is_simulation: bool = False, use_doubling: bool= False):
         self._agent = None
         if (strategy == "QLearner"):
             self._agent = Agent(
-                gamma=0.9,
+                gamma=0.99,
                 epsilon_init=1.0, 
                 epsilon_decay=0.001, 
-                epsilon_final=0.01, 
+                epsilon_final=0.1, 
                 alpha=0.01,
                 id=id,
                 use_doubling = use_doubling
@@ -239,11 +249,12 @@ class Agent:
                 alpha: float,
                 gamma: float,
                 id: int,
-                use_doubling: bool):
+                use_doubling: bool,
+                use_q_table: bool = True):
         
         self.q_values = [[0] * 37 for _ in range(7)]
         self.q_table = defaultdict(lambda: 0)
-      
+        self.use_q_table = use_q_table
 
         self.epsilon = epsilon_init
         self.epsilon_decay = epsilon_decay
@@ -253,7 +264,7 @@ class Agent:
         self.discount_factor = gamma
         self.id = id
         self.use_doubling = use_doubling 
-        self.interval_size = 10
+        self.interval_size = (PLAYERCOUNT ** 1.5) * 5
 
         self.training_errors = []
         self.episode_rewards = []
@@ -261,6 +272,19 @@ class Agent:
 
     def get_stripe_index(self, stripes_sum: int) -> int:
         return stripes_sum // self.interval_size
+
+    def get_q_value(self, dice_count, cur_sum, stripes_index):
+        """ Helper function to fetch Q-value from the chosen method. """
+        if self.use_q_table:
+            return self.q_table[(dice_count, cur_sum, stripes_index)]
+        return self.q_values[dice_count][cur_sum]
+    
+    def set_q_value(self, dice_count, cur_sum, stripes_index, value):
+        """ Helper function to set Q-value in the chosen method. """
+        if self.use_q_table:
+            self.q_table[(dice_count, cur_sum, stripes_index)] = value
+        else:
+            self.q_values[dice_count][cur_sum] = value
 
     def get_action(self, freq: list[int], cur_sum: int, stripes_sum: int):
         valid_indices = [i for i, x in enumerate(freq) if x != 0] 
@@ -272,8 +296,8 @@ class Agent:
             stripes_index = self.get_stripe_index(stripes_sum)
             for i in valid_indices:
                 count = freq[i]
-                contender_val = self.q_values[dice_count + count][cur_sum + count * (i+1)]
-                best_val = self.q_values[dice_count + freq[best_idx]][cur_sum + freq[best_idx] * (best_idx+1)]
+                contender_val = self.get_q_value(dice_count + count, cur_sum + count * (i+1), stripes_index)
+                best_val = self.get_q_value(dice_count + freq[best_idx], cur_sum + freq[best_idx] * (best_idx+1), stripes_index)
                 if contender_val > best_val:
                     best_idx = i
             return best_idx
@@ -294,10 +318,13 @@ class Agent:
         if not terminated:
             for idx, count in enumerate(next_freq):
                 if count > 0:
-                    max_q_value = max(max_q_value, self.q_values[dice_chosen + count][cur_sum + count *(idx+1)])
+                    max_q_value = max(max_q_value, self.get_q_value(dice_chosen + count, cur_sum + count *(idx+1), stripes_index))
 
-        temporal_difference = reward + self.discount_factor*max_q_value - self.q_values[dice_chosen][cur_sum] # rightside of formula, difference in value
-        self.q_values[dice_chosen][cur_sum] += self.learning_rate * temporal_difference # you weight the difference by alpha, the learning rate
+        current_q_value = self.get_q_value(dice_chosen, cur_sum, stripes_index)
+        temporal_difference = reward + self.discount_factor * max_q_value - current_q_value
+        new_q_value = current_q_value + self.learning_rate * temporal_difference
+        self.set_q_value(dice_chosen, cur_sum, stripes_index, new_q_value)
+        
         self.training_errors.append(temporal_difference) # you add the difference to a list, so you can see how much the policy changes
         
     
@@ -311,14 +338,14 @@ class Agent:
 
 
 
-REPLICATIONS = 100000
-DICE = 6
-SIDES = 6
+# REPLICATIONS = 100000
+# DICE = 6
+# SIDES = 6
 
-PLAYERCOUNT = int(input("How many players do you want in this game? "))
-# IS_SIMULATION = input("Do you want to run a simulation? (True/False) ")
-# IS_SIMULATION = True if IS_SIMULATION == "True" else False
-IS_SIMULATION = True
+# PLAYERCOUNT = int(input("How many players do you want in this game? "))
+# # IS_SIMULATION = input("Do you want to run a simulation? (True/False) ")
+# # IS_SIMULATION = True if IS_SIMULATION == "True" else False
+# IS_SIMULATION = True
 
 # Initialize tracking dictionaries for each player
 dice_choice_freq_per_player = [{i: 0 for i in range(1, SIDES + 1)} for _ in range(PLAYERCOUNT)]
@@ -721,13 +748,9 @@ if IS_SIMULATION:
             simulation(player_list, dice_choice_freq_per_player)
 
 
-
-
 SHOW_STATS = str(input("Do you want to view the statistics? (y/n) "))
 if SHOW_STATS == 'y':   
     show_statistics(player_list, dice_choice_freq_per_player, ending_sum_freq_per_player, REPLICATIONS)
-
-
 
 
 def get_moving_avgs(arr, window, convolution_mode):
@@ -740,9 +763,27 @@ def get_moving_avgs(arr, window, convolution_mode):
 
 for player in player_list:
     if player.strategy == "QLearner":
-        with open(f"q_table{player.agent.use_doubling}.txt", "w") as f:
-            for row in player.agent.q_values:
-                f.write("  ".join(f"{val:.2f}" for val in row) + "\n")
+        filename = f"q_table{player.agent.use_doubling}.txt"
+        with open(filename, "w") as f:
+            if player.agent.use_q_table:
+                # Group Q-table values by `stripes_index`
+                q_matrices = defaultdict(lambda: [[0] * 37 for _ in range(7)])
+
+                # Populate matrices
+                for (dice_count, cur_sum, stripes_index), val in player.agent.q_table.items():
+                    q_matrices[stripes_index][dice_count][cur_sum] = val
+
+                # Write matrices separately
+                for stripes_index, matrix in sorted(q_matrices.items()):
+                    f.write(f"Stripes Index: {stripes_index}\n")
+                    for row in matrix:
+                        f.write("  ".join(f"{val:.2f}" for val in row) + "\n")
+                    f.write("\n")  # Separate different tables
+
+            else:
+                # Save Q-matrix as before
+                for row in player.agent.q_values:
+                    f.write("  ".join(f"{val:.2f}" for val in row) + "\n")
         
         rolling_len = 500
         fig, axs = plt.subplots(ncols=2, figsize=(12,5))
@@ -755,8 +796,6 @@ for player in player_list:
         )
         axs[0].plot(range(len(reward_moving_average)), reward_moving_average)
 
-
-
         axs[1].set_title("Training Error")
         training_error_moving_average = get_moving_avgs(
             player.agent.training_errors,
@@ -766,8 +805,6 @@ for player in player_list:
         axs[1].plot(range(len(training_error_moving_average)), training_error_moving_average)
         plt.tight_layout()
         plt.show()
-
-    
 
 for player in player_list:
     player.reset()
@@ -872,8 +909,6 @@ class Scoreboard:
                 text = self.font.render(str(cell), True, BLACK)
                 screen.blit(text, (x + 5, y + 5))
         
-       
-
 class Slider:
     def __init__(self, x, y, width, height, name, start_value, min_val, max_val, step):
         self.rect = pygame.Rect(x, y, width, height)
