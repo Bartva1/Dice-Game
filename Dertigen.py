@@ -286,6 +286,8 @@ class Agent:
                terminated: bool,
                next_freq: list[int],
                stripes_sum: int):
+        if self.epsilon == 0:
+            return
         stripes_index = self.get_stripe_index(stripes_sum)
         max_q_value = 0
         dice_chosen = DICE - sum(freq)
@@ -633,8 +635,7 @@ def play_round(player_list: list[Player], dice_choice_freq_per_player: list[dict
                 dice_count = temp[0]
                 cur_sum = temp[1]
         process_player_stripes(cur_sum, player_list, cur_player)
-        if strategy != 'QLearner' or rep >= REPLICATIONS // 2:
-            ending_sum_freq_per_player[id - 1][cur_sum] += 1  # Track ending sum for current player
+        ending_sum_freq_per_player[id - 1][cur_sum] += 1  # Track ending sum for current player
 
 
 
@@ -703,6 +704,24 @@ for player in player_list:
 
 if IS_SIMULATION:
     simulation(player_list, dice_choice_freq_per_player)
+    if any(player.strategy == 'QLearner' for player in player_list):
+        evaluate_agent = str(input("Do you want to evaluate the QLearner? (y/n) "))
+        if evaluate_agent == 'y':
+            for player in player_list:
+                if player.strategy == 'QLearner':
+                    player.agent.stop_exploring()
+                player.reset()
+            for d in dice_choice_freq_per_player:
+                for key in d:
+                    d[key] = 0
+
+            for d in ending_sum_freq_per_player:
+                for key in d:
+                    d[key] = 0
+            simulation(player_list, dice_choice_freq_per_player)
+
+
+
 
 SHOW_STATS = str(input("Do you want to view the statistics? (y/n) "))
 if SHOW_STATS == 'y':   
