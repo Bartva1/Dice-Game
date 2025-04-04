@@ -6,7 +6,7 @@ import math
 import pygame
 import time
 from tqdm import tqdm
-rand.seed(int(time.time()))
+rand.seed(42)
 from collections import defaultdict
 
 import os
@@ -16,22 +16,22 @@ from typing import List, Callable, Tuple
 # GENERAL TO DO:  
 # 1. Add doc comments to each class and method
 # 2. Refactor longer methods
-# 3. Split game part and Simulation/RL agent part
-# 4. Possibly add another state which is maybe like an interval of number of stripes in the game
+# 3. Split game part and Simulation/RL agent part (so in different files)
+# 4. Possibly analyze the distribution of stripes per round (in case of doubling/states)
 
-# TO DO: reorganize this class
 
 REPLICATIONS = 100000
 DICE = 6
 SIDES = 6
 
 PLAYERCOUNT = int(input("How many players do you want in this game? "))
-# IS_SIMULATION = input("Do you want to run a simulation? (True/False) ")
-# IS_SIMULATION = True if IS_SIMULATION == "True" else False
-IS_SIMULATION = True
+IS_SIMULATION = input("Do you want to run a simulation? (True/False) ")
+IS_SIMULATION = True if IS_SIMULATION == "True" else False
+
 
 class Player:
     def __init__(self, id: int, strategy: str, alpha: float, beta: float, is_simulation: bool = False, use_doubling: bool= False):
+       
         self._agent = None
         if (strategy == "QLearner"):
             self._agent = Agent(
@@ -250,7 +250,7 @@ class Agent:
                 gamma: float,
                 id: int,
                 use_doubling: bool,
-                use_q_table: bool = True):
+                use_q_table: bool = False):
         
         self.q_values = [[0] * 37 for _ in range(7)]
         self.q_table = defaultdict(lambda: 0)
@@ -334,25 +334,11 @@ class Agent:
     def stop_exploring(self):
         self.epsilon = 0
         
-
-
-
-
-# REPLICATIONS = 100000
-# DICE = 6
-# SIDES = 6
-
-# PLAYERCOUNT = int(input("How many players do you want in this game? "))
-# # IS_SIMULATION = input("Do you want to run a simulation? (True/False) ")
-# # IS_SIMULATION = True if IS_SIMULATION == "True" else False
-# IS_SIMULATION = True
-
 # Initialize tracking dictionaries for each player
 dice_choice_freq_per_player = [{i: 0 for i in range(1, SIDES + 1)} for _ in range(PLAYERCOUNT)]
 ending_sum_freq_per_player = [{i: 0 for i in range(DICE * SIDES + 1)} for _ in range(PLAYERCOUNT)]
 
-
-# these lists are constructed by a simulation in java with 1e8 replications for each entry
+# these lists are constructed by a monte carlo simulation in java with 1e8 replications for each entry
 underTenProbabilityMemo = [
     [0.2768436, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
     [0.0, 0.3128557, 0.2027189, 0.1186102, 0.0551224, 0.0209805, 0.0, 0.0, 0.0, 0.0],
@@ -387,25 +373,22 @@ expectedGivenStripesMemo = [
 ]
 expectedGivenStripesMemoAbove30 = [2.798420295491079, 5.596840590982158, 8.395260886473237, 11.193681181964315, 13.992101477455394, 16.790521772946473]
 
-# TO DO: either remove these utilities or organize them better
-def linear_utility(x: float) -> float:
-    return x
 
-def exponential_utility(x: float, a: float):
-    return (math.exp(a * x) - 1) / (math.exp(a) - 1) if a != 0 else (math.exp(a * x) - 1)
+def exponential_utility(x: float, a: float) -> float:
+    """Exponential utility function used to transform value of stripes for players with the strategy SmartRiskTaker"""
+    return (math.exp(a * x) - 1) / (math.exp(a) - 1) if a != 0 else (math.exp(x) - 1)
 
-def x_log_x_utility(x: float) -> float:
-    return  x * math.log(1+x) 
-
-def x_sqrt_x_utility(x: float) -> float:
     utility = x * math.sqrt(x)
     return  utility
 
 def draw_dice(dice_count: int) -> list[int]:
-    """Used to get new action space
+    """Used to get new action space, draws dice_count die between 1 and 6.
     
     Args:
         dice_count: number of dice to throw
+
+    Returns:
+        list: A 0-indexed list contain the frequency of each dice roll, so index 0 contains frequency of dice with value 1.
     """
     frequency = [0] * SIDES
     for _ in range(dice_count):
@@ -417,17 +400,37 @@ def handle_dice(dice_count: int, cur_sum: int, index: int, freq: int, id: int, d
     outputs the new dice count and new sum after picking these die.
     
     Args:
-        dice_count: number of dice not yet taken
+        dice_count: number of die still to throw
         cur_sum: current sum of die taken
         index: index in freq of the die chosen (0-indexed)
         freq: frequency of the die chosen
-        dice_choice_freq_per_player: list of dictionaries used to capture the stats per player"""
+        dice_choice_freq_per_player: list of dictionaries used to capture the stats per player
+
+    Returns:
+        **dice_count**: the updated dice_count
+        **cur_cum**: the updated cur_sum    
+    """
+    
     dice_count -= freq
     dice_choice_freq_per_player[id-1][index+1] += freq
     cur_sum += freq * (index+1)
     return dice_count, cur_sum
 
 def risk_strategy(frequency: list, dice_count: int, cur_sum: int, id: int, dice_choice_freq_per_player: list[dict[int, int]], player_list: list[Player]) -> tuple[int, int]:
+    """Greedy strategy to always take the dice with the lowest possible value
+    
+    Args:
+        frequency: list of frequencies per die in the current roll (0-indexed)
+        dice_count: number of die still to throw
+        cur_sum: current sum of die taken
+        id: id of the current player
+        dice_choice_freq_per_player: list of dictionaries to keep track of frequency of chosen die
+        player_list: list containing all the players in the game
+    
+    Returns:
+        dice_count: the updated dice_count
+        cur_sum: the updated cur_sum"""
+    
     for index, freq in enumerate(frequency):
         if freq > 0:
             if dice_count == 6:
@@ -437,6 +440,19 @@ def risk_strategy(frequency: list, dice_count: int, cur_sum: int, id: int, dice_
     return dice_count, cur_sum
 
 def risk_averse_strategy(frequency: list, dice_count: int, cur_sum: int, id: int, dice_choice_freq_per_player: list[dict[int, int]]) -> tuple[int, int]:
+    """Greedy strategy to always take the dice with the highest possible value
+    
+    Args:
+        frequency: list of frequencies per die in the current roll (0-indexed)
+        dice_count: number of die still to throw
+        cur_sum: current sum of die taken
+        id: id of the current player
+        dice_choice_freq_per_player: list of dictionaries to keep track of frequency of chosen die
+        
+    
+    Returns:
+        dice_count: the updated dice_count
+        cur_sum: the updated cur_sum"""
     for index in range(len(frequency) - 1, -1, -1):
         freq = frequency[index]
         if freq > 0:
@@ -445,6 +461,22 @@ def risk_averse_strategy(frequency: list, dice_count: int, cur_sum: int, id: int
     return dice_count, cur_sum
 
 def personal_strategy(frequency: list, dice_count: int, cur_sum: int, id: int, dice_choice_freq_per_player: list[dict[int,int]], player_list: list[Player]) -> tuple[int, int]:
+    """Strategy where you can yourself choose the dice that gets picked
+    
+    Args:
+        frequency: list of frequencies per die in the current roll (0-indexed)
+        dice_count: number of die still to throw
+        cur_sum: current sum of die taken
+        id: id of the current player
+        dice_choice_freq_per_player: list of dictionaries to keep track of frequency of chosen die
+        player_list: list containing all the players in the game
+    
+    Returns:
+        dice_count: 
+        the updated dice_count
+
+        **cur_sum:**
+            The updated cur_sum"""
     print(f"Your have currently thrown {DICE - dice_count} dice and you have a sum of {cur_sum}")
     index = int(input(f"Here are the frequencies of the dice: {frequency}, what dice do you choose to hold? "))-1
     for i in range(SIDES):
@@ -457,6 +489,23 @@ def personal_strategy(frequency: list, dice_count: int, cur_sum: int, id: int, d
 
 # TO DO: Refactor this method
 def prepare_smart_risktaker(frequency, dice_count, cur_sum) -> tuple[list[int], list[int], list[float]]:
+    """Creates 3 lists which are needed to prepare the player with the strategy SmartRiskTaker to optimally make their choice.
+     
+    
+    Args:
+        frequency: list of frequencies per die in the current roll (0-indexed)
+        dice_count: number of die still to throw
+        cur_sum: current sum of die taken
+        
+    Returns:
+        expected_stripes_for_self:
+        List with the expected stripes this player will receive based on which dice they choose.  
+          
+        **expected_given_stripes_above_30**  
+            List with the expected stripes this player will give based on the above 30 rule for each dice.  
+          
+        **p_doubling**  
+            List with the probabilities of doubling based on which dice they choose.  """
     expected_stripes_for_self = [0] * 6
     expected_given_stripes_above_30 = [0] * 6
     p_doubling = [0] * 6
@@ -491,12 +540,6 @@ def best_choice_smart_risktaker(frequency: list, expected_stripes_for_self: list
     best_index = 0
     best_freq = frequency[best_index]
     cur_player = player_list[id-1]
-    # Idea was to use a strategy that if probability of doubling is high and value then go low, but does not work that well
-    # for index, freq in enumerate(frequency):
-    #     if p_doubling[index] > 0.5 and (sum([player.stripes for player in player_list]) > PLAYERCOUNT*cur_player.stripes):
-    #         if sum(frequency) == DICE:
-    #             cur_player.increment_times_one_first()
-    #         return index, freq
     for index in range(len(frequency) - 1, -1, -1):
         freq = frequency[index]
         if freq > 0:
@@ -552,9 +595,6 @@ def process_player_stripes(cur_sum: int, player_list: list[Player], cur_player: 
                 continue
             player.double_stripes()
     
-        
-
-
 def calculate_rewards(dice_sum: int, player_list: list[Player], cur_player: Player) -> tuple[int, int, bool]:
     """Function used to calculate values in the format [stripes_taken, stripes_given, doubled],
     stripes_taken indicates number of stripes for yourself, stripes_given indicates how many stripes
@@ -618,9 +658,6 @@ def choices_QLearner(RL_agent: Agent, player_list: List[Player]):
     RL_agent.decay()
     return cur_sum
        
-
-    
-
 def plot_frequencies(frequencies: list[int], title:str, xlabel:str, ylabel:str) -> None:
     plt.figure(figsize=(10, 6))
     keys = list(frequencies.keys())
@@ -664,14 +701,10 @@ def play_round(player_list: list[Player], dice_choice_freq_per_player: list[dict
         process_player_stripes(cur_sum, player_list, cur_player)
         ending_sum_freq_per_player[id - 1][cur_sum] += 1  # Track ending sum for current player
 
-
-
 def simulation(player_list: list[Player], dice_choice_freq_per_player: list[dict[int, int]]):
     for rep in tqdm(range(REPLICATIONS)):
         play_round(player_list, dice_choice_freq_per_player, rep)
-    
-    
-
+        
 def show_statistics(player_list: list[Player], dice_choice_freq_per_player: list[dict[int,int]], ending_sum_freq_per_player: list[dict[int,int]], rounds: int):
     for player in player_list:
         print("--------------------------------------------------------------------------------")
@@ -703,10 +736,6 @@ def show_statistics(player_list: list[Player], dice_choice_freq_per_player: list
         )
     print("--------------------------------------------------------------------------------")    
 
-
-
-
-
 # actual game/simulation: 
 player_list = []
 for i in range(1, PLAYERCOUNT + 1):
@@ -728,10 +757,54 @@ for player in player_list:
             else:
                 player.add_utility(1)
 
-
 if IS_SIMULATION:
     simulation(player_list, dice_choice_freq_per_player)
+    
     if any(player.strategy == 'QLearner' for player in player_list):
+        for player in player_list:
+            if player.strategy == "QLearner":
+                filename = f"q_table{player.agent.use_doubling}.txt"
+                with open(filename, "w") as f:
+                    if player.agent.use_q_table: # uses extra table for number of stripes in game
+                        q_matrices = defaultdict(lambda: [[0] * 37 for _ in range(7)])
+                        for (dice_count, cur_sum, stripes_index), val in player.agent.q_table.items():
+                            q_matrices[stripes_index][dice_count][cur_sum] = val
+                        for stripes_index, matrix in sorted(q_matrices.items()):
+                            f.write(f"Stripes Index: {stripes_index}\n")
+                            for row in matrix:
+                                f.write("  ".join(f"{val:.2f}" for val in row) + "\n")
+                            f.write("\n") 
+                    else: # Uses regular states
+                        for row in player.agent.q_values:
+                            f.write("  ".join(f"{val:.2f}" for val in row) + "\n")
+                # plots for learning
+                rolling_len = 500
+                fig, axs = plt.subplots(ncols=2, figsize=(12,5))
+                def get_moving_avgs(arr, window, convolution_mode):
+                    return np.convolve(
+                        np.array(arr).flatten(),
+                        np.ones(window),
+                        mode=convolution_mode
+                    ) / window
+
+                axs[0].set_title("Episode Rewards")
+                reward_moving_average = get_moving_avgs(
+                    player.agent.episode_rewards,
+                    rolling_len,
+                    "valid"
+                )
+                axs[0].plot(range(len(reward_moving_average)), reward_moving_average)
+
+                axs[1].set_title("Training Error")
+                training_error_moving_average = get_moving_avgs(
+                    player.agent.training_errors,
+                    rolling_len,
+                    "same"
+                )
+                axs[1].plot(range(len(training_error_moving_average)), training_error_moving_average)
+                plt.tight_layout()
+                plt.show()
+
         evaluate_agent = str(input("Do you want to evaluate the QLearner? (y/n) "))
         if evaluate_agent == 'y':
             for player in player_list:
@@ -747,71 +820,18 @@ if IS_SIMULATION:
                     d[key] = 0
             simulation(player_list, dice_choice_freq_per_player)
 
-
-SHOW_STATS = str(input("Do you want to view the statistics? (y/n) "))
+SHOW_STATS = input("Do you want to view the statistics? (y/n) ")
 if SHOW_STATS == 'y':   
     show_statistics(player_list, dice_choice_freq_per_player, ending_sum_freq_per_player, REPLICATIONS)
 
-
-def get_moving_avgs(arr, window, convolution_mode):
-    return np.convolve(
-        np.array(arr).flatten(),
-        np.ones(window),
-        mode=convolution_mode
-    ) / window
-
-
-for player in player_list:
-    if player.strategy == "QLearner":
-        filename = f"q_table{player.agent.use_doubling}.txt"
-        with open(filename, "w") as f:
-            if player.agent.use_q_table:
-                # Group Q-table values by `stripes_index`
-                q_matrices = defaultdict(lambda: [[0] * 37 for _ in range(7)])
-
-                # Populate matrices
-                for (dice_count, cur_sum, stripes_index), val in player.agent.q_table.items():
-                    q_matrices[stripes_index][dice_count][cur_sum] = val
-
-                # Write matrices separately
-                for stripes_index, matrix in sorted(q_matrices.items()):
-                    f.write(f"Stripes Index: {stripes_index}\n")
-                    for row in matrix:
-                        f.write("  ".join(f"{val:.2f}" for val in row) + "\n")
-                    f.write("\n")  # Separate different tables
-
-            else:
-                # Save Q-matrix as before
-                for row in player.agent.q_values:
-                    f.write("  ".join(f"{val:.2f}" for val in row) + "\n")
-        
-        rolling_len = 500
-        fig, axs = plt.subplots(ncols=2, figsize=(12,5))
-
-        axs[0].set_title("Episode Rewards")
-        reward_moving_average = get_moving_avgs(
-            player.agent.episode_rewards,
-            rolling_len,
-            "valid"
-        )
-        axs[0].plot(range(len(reward_moving_average)), reward_moving_average)
-
-        axs[1].set_title("Training Error")
-        training_error_moving_average = get_moving_avgs(
-            player.agent.training_errors,
-            rolling_len,
-            "same"
-        )
-        axs[1].plot(range(len(training_error_moving_average)), training_error_moving_average)
-        plt.tight_layout()
-        plt.show()
+PLAY_GAME = input("Do you want to play using the GUI? (y/n)"):
+if PLAY_GAME != 'y':
+    exit()
 
 for player in player_list:
     player.reset()
     if player.strategy == "QLearner":
         player.agent.stop_exploring()
-
-exit()
 
 # constants and initialization
 WIDTH, HEIGHT = 800, 600
@@ -887,11 +907,9 @@ class Scoreboard:
         pygame.draw.rect(screen, (255, 223, 186), self.rect)  # Vibrant background colour
         pygame.draw.rect(screen, (255, 87, 34), self.rect, 5)  # Border colour and thickness
 
-        # Calculate column width and header height
         column_width = self.rect.width // len(self.column_names)
         header_height = 30
-
-        # Draw the column headers
+   
         for i, column_name in enumerate(self.players[0].get_columns()):
             x = self.rect.x + i * column_width
             y = self.rect.y
@@ -899,7 +917,6 @@ class Scoreboard:
             text = self.font.render(column_name, True, BLACK)
             screen.blit(text, (x + 5, y + 5))
 
-        # Draw the player data rows
         row_height = 25
         for i, player in enumerate(self.players):
             for j, cell in enumerate(player.get_row()):
@@ -908,7 +925,7 @@ class Scoreboard:
                 pygame.draw.rect(screen, (255, 87, 34), (x, y, column_width, row_height), 1)
                 text = self.font.render(str(cell), True, BLACK)
                 screen.blit(text, (x + 5, y + 5))
-        
+    
 class Slider:
     def __init__(self, x, y, width, height, name, start_value, min_val, max_val, step):
         self.rect = pygame.Rect(x, y, width, height)
@@ -931,18 +948,13 @@ class Slider:
         self.knob_rect.x = self.rect.x + rel_x
 
     def draw(self, screen):
-         # Draw the filled line
         fill_width = self.knob_rect.centerx - self.rect.x
         pygame.draw.line(screen, self.fill_colour, (self.rect.x, self.rect.centery), (self.rect.x + fill_width, self.rect.centery), 4)
-        # Draw the line
         pygame.draw.line(screen, self.line_colour, (self.rect.x + fill_width, self.rect.centery), (self.rect.right, self.rect.centery), 4)
-        # Draw the knob with border
         pygame.draw.ellipse(screen, self.knob_colour, self.knob_rect)
-        # Draw the current value above the knob
         value_text = f"{self.value:.1f}"
         text_surf = self.font.render(value_text, True, self.knob_colour)
         screen.blit(text_surf, (self.knob_rect.x + self.knob_rect.width // 2 - text_surf.get_width() // 2, self.knob_rect.y - 30))
-        # Draw the name of the slider above the line
         name_text = self.name
         name_surf = self.font.render(name_text, True, self.line_colour)
         screen.blit(name_surf, (self.rect.x + self.rect.width // 2 - name_surf.get_width() // 2, self.rect.y - 55))
@@ -966,7 +978,6 @@ class Slider:
 
     def get_value(self):
         return self.value
-
 
 class Button:
     def __init__(self, x, y, width, height, text, action, enabled, font):
@@ -999,7 +1010,6 @@ class Button:
 
     def handle_hover(self,event):
         self.hovered = self.rect.collidepoint(event.pos)
-
 
 class UIManager:
     def __init__(self, dice, buttons, sliders, popup_message, game):
@@ -1039,15 +1049,14 @@ class UIManager:
 
         text_name = self.game.font.render(self.game.players[self.game.current_player_index].strategy, True, (0,0,0))
         text_name_rect = text_name.get_rect(center=popup_rect.center)
-        text_name_rect.y -= 20  # Move down by 20 pixels
+        text_name_rect.y -= 20 
         screen.blit(text_name, text_name_rect)
 
         text_surf = self.game.font.render(self.popup_message, True, (0, 0, 0))
         text_surf_rect = text_surf.get_rect(center=popup_rect.center)
-        text_surf_rect.y += 20  # Move up by 20 pixels
+        text_surf_rect.y += 20  
         screen.blit(text_surf, text_surf_rect)
          
-
 class Game:
     def __init__(self, playerList):
         self.dice = [Dice() for _ in range(6)]
@@ -1071,7 +1080,7 @@ class Game:
         self.scoreboard = Scoreboard(WIDTH // 10, HEIGHT // 10, 4 * WIDTH // 5, 4 * HEIGHT // 5, self.players)
         self.special_turn_next_step_time = 0
         self.animation_starting_time = 0
-        self.last_action_time = None  # Initialize last_action_time to None
+        self.last_action_time = None  
         self.last_display_time = None
         self.dice_display_start_time = None
 
@@ -1325,10 +1334,3 @@ pygame.quit()
 if input("Do you want to view the statistics? ").strip().lower() == "yes":
     show_statistics(player_list, dice_choice_freq_per_player, ending_sum_freq_per_player, game.rounds)
 
-
-
-
-
-# to make sure I can do the animation of adding stripes, I will need a list that holds the info on who gets extra stripes
-# further I need two pygame.time.get_ticks() 1 is for the timer of the f"{sign}{stripes}" text and the other will be the animation
-# that enumerates the new stripes to the player, so if you have 0 stripes and now got 4, every 0.05 seconds you will gain 1 stripe, up until your new count
