@@ -108,6 +108,10 @@ class Player:
     def id(self) -> int:
         return self._id
     
+    @id.setter
+    def id(self, value: int) -> None:
+        self._id = value
+    
     @property
     def doubling_count(self) -> int:
         return self._doubling_count
@@ -250,7 +254,7 @@ class Agent:
                 gamma: float,
                 id: int,
                 use_doubling: bool,
-                use_q_table: bool = False):
+                use_q_table: bool = True):
         
         self.q_values = [[0] * 37 for _ in range(7)]
         self.q_table = defaultdict(lambda: 0)
@@ -824,14 +828,28 @@ SHOW_STATS = input("Do you want to view the statistics? (y/n) ")
 if SHOW_STATS == 'y':   
     show_statistics(player_list, dice_choice_freq_per_player, ending_sum_freq_per_player, REPLICATIONS)
 
-PLAY_GAME = input("Do you want to play using the GUI? (y/n)"):
+PLAY_GAME = input("Do you want to play using the GUI? (y/n):")
 if PLAY_GAME != 'y':
     exit()
 
-for player in player_list:
-    player.reset()
-    if player.strategy == "QLearner":
-        player.agent.stop_exploring()
+contains_ai = any(player.strategy == "QLearner" for player in player_list)
+if contains_ai:
+    for player in player_list:
+        player.reset()
+        if player.strategy == "QLearner":
+            player.agent.stop_exploring()
+    play_against_ai = input("Do you want to play against the AI? (y/n): ")
+    if play_against_ai == 'y':
+        new_player_list = [player for player in player_list if player.strategy == "QLearner"]
+        player_list = new_player_list
+        for i, player in enumerate(player_list):
+            player.id = i + 1
+        strategy = input("What is your name? ")
+        player_list.append(Player(len(player_list)+1, strategy, alpha, beta, False))
+                
+
+
+
 
 # constants and initialization
 WIDTH, HEIGHT = 800, 600
