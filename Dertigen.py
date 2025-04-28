@@ -35,11 +35,11 @@ class Player:
         self._agent = None
         if (strategy == "QLearner"):
             self._agent = Agent(
-                gamma=0.99,
-                epsilon_init=1.0, 
-                epsilon_decay=0.001, 
-                epsilon_final=0.1, 
-                alpha=0.01,
+                gamma = 0.9999,
+                epsilon_init = 1.0,
+                epsilon_decay = 0.0001,
+                epsilon_final = 0.1,
+                alpha = 0.03,  
                 id=id,
                 use_doubling = use_doubling
             )
@@ -254,9 +254,9 @@ class Agent:
                 gamma: float,
                 id: int,
                 use_doubling: bool,
-                use_q_table: bool = True):
+                use_q_table: bool = False):
         
-        self.q_values = [[0] * 37 for _ in range(7)]
+        self.q_values = [[0] * 37 for _ in range(7)]  
         self.q_table = defaultdict(lambda: 0)
         self.use_q_table = use_q_table
 
@@ -337,6 +337,12 @@ class Agent:
 
     def stop_exploring(self):
         self.epsilon = 0
+
+    def heuristic(self):
+        """Adapts the q_values based on knowledge that rewards are behaving monotonically"""
+        for i in range(1, 7):
+            for j in range(5+i, 37):
+                self.q_values[i][j] = max(self.q_values[i][j], self.q_values[i][j-1] + 0.01)
         
 # Initialize tracking dictionaries for each player
 dice_choice_freq_per_player = [{i: 0 for i in range(1, SIDES + 1)} for _ in range(PLAYERCOUNT)]
@@ -769,7 +775,7 @@ if IS_SIMULATION:
             if player.strategy == "QLearner":
                 filename = f"q_table{player.agent.use_doubling}.txt"
                 with open(filename, "w") as f:
-                    if player.agent.use_q_table: # uses extra table for number of stripes in game
+                    if player.agent.use_q_table: 
                         q_matrices = defaultdict(lambda: [[0] * 37 for _ in range(7)])
                         for (dice_count, cur_sum, stripes_index), val in player.agent.q_table.items():
                             q_matrices[stripes_index][dice_count][cur_sum] = val
@@ -778,10 +784,10 @@ if IS_SIMULATION:
                             for row in matrix:
                                 f.write("  ".join(f"{val:.2f}" for val in row) + "\n")
                             f.write("\n") 
-                    else: # Uses regular states
+                    else: 
                         for row in player.agent.q_values:
                             f.write("  ".join(f"{val:.2f}" for val in row) + "\n")
-                # plots for learning
+
                 rolling_len = 500
                 fig, axs = plt.subplots(ncols=2, figsize=(12,5))
                 def get_moving_avgs(arr, window, convolution_mode):
@@ -813,7 +819,11 @@ if IS_SIMULATION:
         if evaluate_agent == 'y':
             for player in player_list:
                 if player.strategy == 'QLearner':
+                    player.agent.heuristic()
                     player.agent.stop_exploring()
+                    with open(filename, "w") as f:
+                        for row in player.agent.q_values:
+                            f.write("  ".join(f"{val:.2f}" for val in row) + "\n")
                 player.reset()
             for d in dice_choice_freq_per_player:
                 for key in d:
