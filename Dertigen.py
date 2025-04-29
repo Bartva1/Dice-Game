@@ -342,6 +342,8 @@ class Agent:
         """Adapts the q_values based on knowledge that rewards are behaving monotonically"""
         for i in range(1, 7):
             for j in range(5+i, 37):
+                if self.q_values[i][j] == 0:
+                    continue
                 self.q_values[i][j] = max(self.q_values[i][j], self.q_values[i][j-1] + 0.01)
         
 # Initialize tracking dictionaries for each player
