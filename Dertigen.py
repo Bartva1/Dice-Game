@@ -18,6 +18,7 @@ from typing import List, Callable, Tuple
 # 2. Refactor longer methods
 # 3. Split game part and Simulation/RL agent part (so in different files)
 # 4. Possibly analyze the distribution of stripes per round (in case of doubling/states)
+# 5. Tweak the reward function for the RL Agent
 
 
 REPLICATIONS = 100000
@@ -341,7 +342,7 @@ class Agent:
     def heuristic(self):
         """Adapts the q_values based on knowledge that rewards are behaving monotonically"""
         for i in range(1, 7):
-            for j in range(5+i, 37):
+            for j in range(6+i, 37):
                 if self.q_values[i][j] == 0:
                     continue
                 self.q_values[i][j] = max(self.q_values[i][j], self.q_values[i][j-1] + 0.01)
@@ -769,12 +770,61 @@ for player in player_list:
             else:
                 player.add_utility(1)
 
+
+# Plotting methods for RL
+
+def moving_average(x, w):
+    return np.convolve(x, np.ones(w)/w, mode='valid')
+
+def plot_reward_and_error(agent, window=500):
+    # Learning curve
+    plt.figure()
+    ma = moving_average(agent.episode_rewards, window)
+    plt.plot(ma)
+    plt.title('Episode Reward ({}-episode MA)'.format(window))
+    plt.xlabel('Episode')
+    plt.ylabel('Avg Reward')
+    plt.show()
+
+    # TD error
+    plt.figure()
+    te = moving_average(agent.training_errors, window)
+    plt.plot(te)
+    plt.title('TD Error ({}-episode MA)'.format(window))
+    plt.xlabel('Update step')
+    plt.ylabel('TD Error')
+    plt.show()
+
+def plot_reward_histogram(agent, bins=50):
+    plt.figure()
+    plt.hist(agent.episode_rewards, bins=bins)
+    plt.title('Distribution of Episode Rewards')
+    plt.xlabel('Reward')
+    plt.ylabel('Frequency')
+    plt.show()
+
+
+def plot_value_heatmap(agent):
+    values = np.array(agent.q_values)
+    plt.figure()
+    sns.heatmap(values, cmap='viridis', cbar_kws={'label':'V(s)'})
+    plt.xlabel('current sum (0–36)')
+    plt.ylabel('dice left (0–6)')
+    plt.title('Learned Value Function')
+    plt.show()
+
+
+
+
+
 if IS_SIMULATION:
     simulation(player_list, dice_choice_freq_per_player)
     
     if any(player.strategy == 'QLearner' for player in player_list):
         for player in player_list:
             if player.strategy == "QLearner":
+                plot_reward_and_error(player.agent, window=500)
+                plot_reward_histogram(player.agent, bins=50)
                 filename = f"q_table{player.agent.use_doubling}.txt"
                 with open(filename, "w") as f:
                     if player.agent.use_q_table: 
@@ -787,35 +837,12 @@ if IS_SIMULATION:
                                 f.write("  ".join(f"{val:.2f}" for val in row) + "\n")
                             f.write("\n") 
                     else: 
+                        plot_value_heatmap(player.agent)
                         for row in player.agent.q_values:
                             f.write("  ".join(f"{val:.2f}" for val in row) + "\n")
-
-                rolling_len = 500
-                fig, axs = plt.subplots(ncols=2, figsize=(12,5))
-                def get_moving_avgs(arr, window, convolution_mode):
-                    return np.convolve(
-                        np.array(arr).flatten(),
-                        np.ones(window),
-                        mode=convolution_mode
-                    ) / window
-
-                axs[0].set_title("Episode Rewards")
-                reward_moving_average = get_moving_avgs(
-                    player.agent.episode_rewards,
-                    rolling_len,
-                    "valid"
-                )
-                axs[0].plot(range(len(reward_moving_average)), reward_moving_average)
-
-                axs[1].set_title("Training Error")
-                training_error_moving_average = get_moving_avgs(
-                    player.agent.training_errors,
-                    rolling_len,
-                    "same"
-                )
-                axs[1].plot(range(len(training_error_moving_average)), training_error_moving_average)
-                plt.tight_layout()
-                plt.show()
+                
+               
+                
 
         evaluate_agent = str(input("Do you want to evaluate the QLearner? (y/n) "))
         if evaluate_agent == 'y':
